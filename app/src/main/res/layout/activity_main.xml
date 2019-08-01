@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".MainActivity">
+
+    <com.example.soundwaveeditor.view.SoundWaveEditorView
+        android:id="@+id/vSoundEditor"
+        android:layout_width="match_parent"
+        android:layout_height="150dp"
+        android:layout_margin="8dp"
+        app:columnSpacingRatio="0.0"
+        app:currentColumnsCount="100"
+        app:activeColumnsColor="@color/colorAccent"
+        app:inactiveColumnsColor="@color/colorGray"
+        app:slideBarsColor="@color/colorPrimaryDark"
+        app:histogramBackground="@color/colorPrimaryDark"
+        app:isColumnsMirroredOnY="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:maxColumnsCount="200"
+        app:minColumnsCount="50"
+        app:minColumnsCountBetweenSlideBars="10"
+        app:needToRoundColumns="true" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

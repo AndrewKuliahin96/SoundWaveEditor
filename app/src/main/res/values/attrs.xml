@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="SoundWaveEditorView">
+        <attr name="histogramBackground" format="color"/>
+        <attr name="activeColumnsColor" format="color"/>
+        <attr name="inactiveColumnsColor" format="color"/>
+        <attr name="slideBarsColor" format="color"/>
+        <attr name="maxColumnsCount" format="integer"/>
+        <attr name="minColumnsCount" format="integer"/>
+        <attr name="currentColumnsCount" format="integer"/>
+        <attr name="minColumnsCountBetweenSlideBars" format="integer"/>
+        <attr name="needToRoundColumns" format="boolean"/>
+        <attr name="isColumnsMirroredOnY" format="boolean"/>
+        <attr name="columnSpacingRatio" format="float"/>
+        <attr name="columnVerticalPaddingRatio" format="float"/>
+        <attr name="histogramTopPaddingRatio" format="float"/>
+    </declare-styleable>
+</resources>
