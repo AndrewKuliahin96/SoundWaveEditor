@@ -23,6 +23,10 @@ class MainActivity : AppCompatActivity() {
                     vSoundEditor.rightSlideBar = vSoundEditor.volumeColumns.size / 100 * p1
                     vSoundEditor1.rightSlideBar = vSoundEditor1.volumeColumns.size / 100 * p1
                 }
+                R.id.sbFirstPosition -> {
+                    vSoundEditor.firstVisibleColumn = vSoundEditor.volumeColumns.size / 100 * p1
+                    vSoundEditor1.firstVisibleColumn = vSoundEditor1.volumeColumns.size / 100 * p1
+                }
             }
         }
 
@@ -38,12 +42,13 @@ class MainActivity : AppCompatActivity() {
 
         sbLeft.setOnSeekBarChangeListener(onSeekBarChangeListener)
         sbRight.setOnSeekBarChangeListener(onSeekBarChangeListener)
+        sbFirstPosition.setOnSeekBarChangeListener(onSeekBarChangeListener)
     }
 
     private fun drawHistogram() {
         val soundDurationMs = 8000
 
-        vSoundEditor.volumeColumns = getUBytes(900).toMutableList()
+        vSoundEditor.volumeColumns = getUBytes(1900).toMutableList()
         vSoundEditor.maxColumnsCount = 800
         vSoundEditor.currentColumnsCount = 700
         vSoundEditor.firstVisibleColumn = 0

@@ -9,6 +9,7 @@ import android.view.View
 import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
 import android.graphics.Rect
+import android.util.Log
 
 
 @ExperimentalUnsignedTypes
@@ -24,8 +25,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_VERTICAL_PADDING_RATIO = 0.25F
         private const val DEFAULT_COLUMNS_RATIO = 1F
         private const val ZERO_SOUND_DURATION = 0
-        private const val TIME_FORMAT = "%02d:%02d"
+        private const val MINUTES_TWO_SYMBOLS_TIME_FORMAT = "%02d:%02d"
+        private const val MINUTES_ONE_SYMBOL_TIME_FORMAT = "%01d:%02d"
     }
+
+    // TODO optimize drawing time (it's too slowly)
 
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
@@ -250,6 +254,22 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
+    // TODO Maybe it would good idea to do size measurements in this method and save results for each column
+    // TODO it release onDraw method from large calculations
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+
+        Log.e("onSizeChanged", "w: $w, h: $h")
+    }
+
+//    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+//        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+//
+////        Log.e("ON MEASURE", "w: $widthMeasureSpec, h: $heightMeasureSpec")
+//
+//        Log.e("ON MEASURE", "w: $width, h: $height")
+//    }
+
     override fun onDraw(canvas: Canvas) = canvas.run {
         getElementsSizes()
 
@@ -257,6 +277,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         val columnRadius = columnWidth / 2F
 
+        // TODO fix this shit (firstVisibleColumn + currentColumnsCount can be greater than columns count)
         val lastVisibleItem = firstVisibleColumn + currentColumnsCount
 
         volumeColumns.takeIf { it.size >= lastVisibleItem }
@@ -278,9 +299,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 }
             }
 
+        // TODO fix time it related to column position in view, not in data set
         if (volumeColumns.isNotEmpty()) {
-            val leftText = getTimeText(leftSlideBar)
-            val rightText = getTimeText(rightSlideBar)
+            val leftText = getTimeText(leftSlideBar + firstVisibleColumn)
+            val rightText = getTimeText(rightSlideBar + firstVisibleColumn)
 
             timeTextPaint?.let {
                 it.getTextBounds(leftText, 0, leftText.length, textRect)
@@ -304,13 +326,16 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         position * columnWidth + position * spacingBetweenColumns + histogramTopPadding / 2
 
     private fun getTimeText(position: Int): String {
+        // TODO refactor, move to const
         val millis = soundDuration / (volumeColumns.size.takeIf { it != 0 } ?: 1) * position
         val second = millis / 1000 % 60
         val minute = millis / (1000 * 60) % 60
 
-        return String.format(TIME_FORMAT, minute, second)
+        return String.format(MINUTES_TWO_SYMBOLS_TIME_FORMAT.takeIf { minute > 10 }
+            ?: MINUTES_ONE_SYMBOL_TIME_FORMAT, minute, second)
     }
 
+    // TODO get and save float width and height values once
     private fun getHistogramBackgroundRectF() =
         RectF(0F, histogramTopPadding, width.toFloat(), height.toFloat())
 
@@ -353,6 +378,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         spacingBetweenColumns = columnWidth * columnSpacingRatio
     }
 
+
+    // TODO maybe need to remove unused
     private fun <T> T.getIfNew(value: T?, receiver: (T) -> Unit) = value?.let {
         if (this != value) receiver(value)
     } ?: Unit
