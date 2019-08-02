@@ -8,6 +8,7 @@ import android.util.AttributeSet
 import android.view.View
 import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
+import android.graphics.Rect
 
 
 @ExperimentalUnsignedTypes
@@ -18,9 +19,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_MAX_COLUMNS_COUNT = 100
         private const val DEFAULT_MIN_COLUMNS_COUNT = 20
         private const val DEFAULT_COLUMNS_COUNT = 50
+        private const val DEFAULT_TIME_TEXT_SIZE = 14F
         private const val DEFAULT_HISTOGRAM_TOP_PADDING = 0.1F
         private const val DEFAULT_VERTICAL_PADDING_RATIO = 0.25F
         private const val DEFAULT_COLUMNS_RATIO = 1F
+        private const val ZERO_SOUND_DURATION = 0
     }
 
     private val histogramTopPaddingRatioRange = 0F..2F
@@ -35,6 +38,21 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var inactiveColumnsPaint: Paint? = null
     private var activeColumnsPaint: Paint? = null
     private var slideBarPaint: Paint? = null
+    private var timeTextPaint: Paint? = null
+
+    private val textRect = Rect(0, 0, 0, 0)
+
+    var timeTextSize = DEFAULT_TIME_TEXT_SIZE
+        set(value) = field.getIfNewAndInvalidate(value) {
+            field = it
+            timeTextPaint?.textSize = it
+        }
+
+    var timeTextColor = android.R.color.black
+        set(value) = field.getIfNewAndInvalidate(value) {
+            field = it
+            timeTextPaint?.color = it
+        }
 
     var histogramBackgroundColor = android.R.color.transparent
         set(value) = field.getIfNewAndInvalidate(value) {
@@ -83,12 +101,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             field = it
         })
 
-    var needToRoundColumns = false
-        set(value) = field.getIfNewAndInvalidate(value) {
+    var soundDuration = 0
+        set(value) = field.getIfAndInvalidate(value, { value > 0 }, {
             field = it
-        }
+        })
 
-    var isColumnsMirroredOnY = false
+    var needToRoundColumns = false
         set(value) = field.getIfNewAndInvalidate(value) {
             field = it
         }
@@ -136,6 +154,16 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     init {
         context.theme.obtainStyledAttributes(attrs, R.styleable.SoundWaveEditorView, 0, 0).apply {
+            timeTextSize = getDimension(
+                R.styleable.SoundWaveEditorView_timeTextSize,
+                DEFAULT_TIME_TEXT_SIZE
+            )
+
+            timeTextColor = getColor(
+                R.styleable.SoundWaveEditorView_timeTextColor,
+                ContextCompat.getColor(context, android.R.color.black)
+            )
+
             histogramBackgroundColor = getColor(
                 R.styleable.SoundWaveEditorView_histogramBackground,
                 ContextCompat.getColor(context, android.R.color.transparent)
@@ -176,11 +204,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 DEFAULT_MIN_COLUMNS_COUNT_BETWEEN_SLIDE_BARS
             )
 
+            soundDuration = getInt(
+                R.styleable.SoundWaveEditorView_soundDuration,
+                ZERO_SOUND_DURATION
+            )
+
             needToRoundColumns =
                 getBoolean(R.styleable.SoundWaveEditorView_needToRoundColumns, false)
-
-            isColumnsMirroredOnY =
-                getBoolean(R.styleable.SoundWaveEditorView_isColumnsMirroredOnY, false)
 
             columnSpacingRatio =
                 getFloat(R.styleable.SoundWaveEditorView_columnSpacingRatio, DEFAULT_COLUMNS_RATIO)
@@ -211,6 +241,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             style = Paint.Style.FILL
             color = slideBarsColor
         }
+
+        timeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = timeTextColor
+            textSize = timeTextSize
+        }
     }
 
     override fun onDraw(canvas: Canvas) = canvas.run {
@@ -218,10 +254,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         histogramBackgroundPaint?.let { paint -> drawRect(getHistogramBackgroundRectF(), paint) }
 
-        val radius = columnWidth / 2F
+        val columnRadius = columnWidth / 2F
 
-        volumeColumns.subList(firstVisibleColumn, firstVisibleColumn + currentColumnsCount)
-            .forEachIndexed { index, uByte ->
+        val lastVisibleItem = firstVisibleColumn + currentColumnsCount
+
+        volumeColumns.takeIf { it.size >= lastVisibleItem }
+            ?.subList(firstVisibleColumn, lastVisibleItem)
+            ?.forEachIndexed { index, uByte ->
                 var isSlideBar = false
 
                 when (index) {
@@ -232,42 +271,74 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     val rectF = getRectF(index, uByte, isSlideBar)
 
                     when (needToRoundColumns) {
-                        true -> drawRoundRect(rectF, radius, radius, paint)
+                        true -> drawRoundRect(rectF, columnRadius, columnRadius, paint)
                         false -> drawRect(rectF, paint)
                     }
                 }
             }
+
+        val leftText = getTimeText(leftSlideBar)
+        val rightText = getTimeText(rightSlideBar)
+
+        timeTextPaint?.let {
+            it.getTextBounds(leftText, 0, leftText.length, textRect)
+
+            val xPos = width / 2F - textRect.width() / 2F
+            val yPos = (histogramTopPadding / 2 - (it.descent() + it.ascent()) / 2F)
+
+            drawText(leftText, 100F, yPos, it)
+
+            it.getTextBounds(rightText, 0, rightText.length, textRect)
+
+            val xPos1 = width / 2F - textRect.width() / 2F
+            val yPos1 = (histogramTopPadding / 2 - (it.descent() + it.ascent()) / 2F)
+
+            drawText(rightText, 200F, yPos1, it)
+        }
+
+        Unit
     }
 
-    private fun getHistogramBackgroundRectF() = RectF(
-        0F, histogramTopPadding, width.toFloat(), height.toFloat()
-    )
+    private fun getTimeText(position: Int): String {
+        val millis = soundDuration / volumeColumns.size * position
+        val second = millis / 1000 % 60
+        val minute = millis / (1000 * 60) % 60
+
+        return String.format("%02d:%02d", minute, second)
+    }
+
+    private fun getHistogramBackgroundRectF() =
+        RectF(0F, histogramTopPadding, width.toFloat(), height.toFloat())
 
     private fun getRectF(position: Int, volumeLevel: UByte, isSlideBar: Boolean = false): RectF {
         val left = position * columnWidth + position * spacingBetweenColumns
+        val right = left + columnWidth
 
-        val heightWithPadding = height - height * columnVerticalPaddingRatio
+        val heightWithTopPadding = height - histogramTopPadding
 
-        val columnHeight = when (isSlideBar) {
-            true -> height.toFloat()
-            false -> heightWithPadding / UByte.MAX_VALUE.toFloat() * volumeLevel.toFloat()
-        }
+        val histogramHeight =
+            heightWithTopPadding - heightWithTopPadding * columnVerticalPaddingRatio
 
-        val halfOfViewHeight = heightWithPadding / 2F
+        val columnHeight =
+            histogramHeight / UByte.MAX_VALUE.toFloat() * volumeLevel.toFloat() - histogramTopPadding
+
+        val histogramXAxis =
+            histogramHeight / 2F + histogramTopPadding + height * columnVerticalPaddingRatio / 2F
+
         val halfOfColumnHeight = columnHeight / 2F
 
-        return when (isColumnsMirroredOnY) {
+        return when (isSlideBar) {
             true -> RectF(
                 left,
-                halfOfViewHeight - halfOfColumnHeight,
-                left + columnWidth,
-                halfOfViewHeight + halfOfColumnHeight
+                histogramTopPadding / 2,
+                right,
+                height.toFloat()
             )
             false -> RectF(
                 left,
-                heightWithPadding - columnHeight,
-                left + columnWidth,
-                heightWithPadding
+                histogramXAxis - halfOfColumnHeight,
+                right,
+                histogramXAxis + halfOfColumnHeight
             )
         }
     }

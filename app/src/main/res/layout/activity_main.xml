@@ -13,14 +13,11 @@
         android:layout_width="match_parent"
         android:layout_height="150dp"
         android:layout_margin="8dp"
+        app:activeColumnsColor="@color/colorRed"
         app:columnSpacingRatio="0.0"
         app:currentColumnsCount="100"
-        app:activeColumnsColor="@color/colorAccent"
+        app:histogramBackground="@color/colorLightGray"
         app:inactiveColumnsColor="@color/colorGray"
-        app:slideBarsColor="@color/colorPrimaryDark"
-        app:histogramBackground="@color/colorPrimaryDark"
-        app:isColumnsMirroredOnY="true"
-        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.5"
         app:layout_constraintStart_toStartOf="parent"
@@ -28,6 +25,28 @@
         app:maxColumnsCount="200"
         app:minColumnsCount="50"
         app:minColumnsCountBetweenSlideBars="10"
-        app:needToRoundColumns="true" />
+        app:needToRoundColumns="true"
+        app:slideBarsColor="@color/colorRed"/>
+
+    <com.example.soundwaveeditor.view.SoundWaveEditorView
+        android:id="@+id/vSoundEditor1"
+        android:layout_width="match_parent"
+        android:layout_height="150dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        app:activeColumnsColor="@color/colorRed"
+        app:columnSpacingRatio="0.0"
+        app:currentColumnsCount="100"
+        app:histogramBackground="@color/colorLightGray"
+        app:inactiveColumnsColor="@color/colorGray"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:maxColumnsCount="200"
+        app:minColumnsCount="50"
+        app:minColumnsCountBetweenSlideBars="10"
+        app:needToRoundColumns="true"
+        app:slideBarsColor="@color/colorRed"/>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
