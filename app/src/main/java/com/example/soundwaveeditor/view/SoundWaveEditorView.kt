@@ -24,6 +24,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_VERTICAL_PADDING_RATIO = 0.25F
         private const val DEFAULT_COLUMNS_RATIO = 1F
         private const val ZERO_SOUND_DURATION = 0
+        private const val TIME_FORMAT = "%02d:%02d"
     }
 
     private val histogramTopPaddingRatioRange = 0F..2F
@@ -277,34 +278,37 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 }
             }
 
-        val leftText = getTimeText(leftSlideBar)
-        val rightText = getTimeText(rightSlideBar)
+        if (volumeColumns.isNotEmpty()) {
+            val leftText = getTimeText(leftSlideBar)
+            val rightText = getTimeText(rightSlideBar)
 
-        timeTextPaint?.let {
-            it.getTextBounds(leftText, 0, leftText.length, textRect)
+            timeTextPaint?.let {
+                it.getTextBounds(leftText, 0, leftText.length, textRect)
 
-            val xPos = width / 2F - textRect.width() / 2F
-            val yPos = (histogramTopPadding / 2 - (it.descent() + it.ascent()) / 2F)
+                val xPos = getTextXAxis(leftSlideBar)
+                val yPos = (histogramTopPadding / 2 - (it.descent() + it.ascent()) / 2F)
 
-            drawText(leftText, 100F, yPos, it)
+                drawText(leftText, xPos, yPos, it)
 
-            it.getTextBounds(rightText, 0, rightText.length, textRect)
+                it.getTextBounds(rightText, 0, rightText.length, textRect)
 
-            val xPos1 = width / 2F - textRect.width() / 2F
-            val yPos1 = (histogramTopPadding / 2 - (it.descent() + it.ascent()) / 2F)
+                val xPos1 = getTextXAxis(rightSlideBar)
+                val yPos1 = (histogramTopPadding / 2 - (it.descent() + it.ascent()) / 2F)
 
-            drawText(rightText, 200F, yPos1, it)
+                drawText(rightText, xPos1, yPos1, it)
+            }
         }
-
-        Unit
     }
 
+    private fun getTextXAxis(position: Int) =
+        position * columnWidth + position * spacingBetweenColumns + histogramTopPadding / 2
+
     private fun getTimeText(position: Int): String {
-        val millis = soundDuration / volumeColumns.size * position
+        val millis = soundDuration / (volumeColumns.size.takeIf { it != 0 } ?: 1) * position
         val second = millis / 1000 % 60
         val minute = millis / (1000 * 60) % 60
 
-        return String.format("%02d:%02d", minute, second)
+        return String.format(TIME_FORMAT, minute, second)
     }
 
     private fun getHistogramBackgroundRectF() =

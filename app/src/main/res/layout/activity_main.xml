@@ -33,20 +33,42 @@
         android:layout_width="match_parent"
         android:layout_height="150dp"
         android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
         android:layout_marginEnd="8dp"
-        android:layout_marginBottom="8dp"
         app:activeColumnsColor="@color/colorRed"
         app:columnSpacingRatio="0.0"
         app:currentColumnsCount="100"
         app:histogramBackground="@color/colorLightGray"
         app:inactiveColumnsColor="@color/colorGray"
-        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/vSoundEditor"
         app:maxColumnsCount="200"
         app:minColumnsCount="50"
         app:minColumnsCountBetweenSlideBars="10"
         app:needToRoundColumns="true"
-        app:slideBarsColor="@color/colorRed"/>
+        app:slideBarsColor="@color/colorRed" />
+
+    <SeekBar
+        android:id="@+id/sbLeft"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/vSoundEditor1" />
+
+    <SeekBar
+        android:id="@+id/sbRight"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="8dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/sbLeft" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
