@@ -11,7 +11,7 @@
         <attr name="minColumnsCount" format="integer"/>
         <attr name="currentColumnsCount" format="integer"/>
         <attr name="soundDuration" format="integer"/>
-        <attr name="minColumnsCountBetweenSlideBars" format="integer"/>
+        <attr name="slideBarsPaddingInColumns" format="integer"/>
         <attr name="needToRoundColumns" format="boolean"/>
         <attr name="columnSpacingRatio" format="float"/>
         <attr name="columnVerticalPaddingRatio" format="float"/>

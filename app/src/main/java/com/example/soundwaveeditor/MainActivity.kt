@@ -14,18 +14,13 @@ class MainActivity : AppCompatActivity() {
     private val onSeekBarChangeListener = object : SeekBar.OnSeekBarChangeListener {
 
         override fun onProgressChanged(seekBar: SeekBar, p1: Int, p2: Boolean) {
+            val pos = vSoundEditor.currentColumnsCount / 100 * p1
+
             when (seekBar.id) {
-                R.id.sbLeft -> {
-                    vSoundEditor.leftSlideBar = vSoundEditor.volumeColumns.size / 100 * p1
-                    vSoundEditor1.leftSlideBar = vSoundEditor1.volumeColumns.size / 100 * p1
-                }
-                R.id.sbRight -> {
-                    vSoundEditor.rightSlideBar = vSoundEditor.volumeColumns.size / 100 * p1
-                    vSoundEditor1.rightSlideBar = vSoundEditor1.volumeColumns.size / 100 * p1
-                }
+                R.id.sbLeft -> { vSoundEditor.leftSlideBar = pos }
+                R.id.sbRight -> { vSoundEditor.rightSlideBar = pos }
                 R.id.sbFirstPosition -> {
-                    vSoundEditor.firstVisibleColumn = vSoundEditor.volumeColumns.size / 100 * p1
-                    vSoundEditor1.firstVisibleColumn = vSoundEditor1.volumeColumns.size / 100 * p1
+                    vSoundEditor.firstVisibleColumn = (vSoundEditor.columnBytes.size  - vSoundEditor.currentColumnsCount) / 100 * p1
                 }
             }
         }
@@ -46,23 +41,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun drawHistogram() {
-        val soundDurationMs = 8000
+        val soundDurationMs = 65_000
 
-        vSoundEditor.volumeColumns = getUBytes(1900).toMutableList()
+        val bytes = getUBytes(1_900).toMutableList()
+
+        vSoundEditor.columnBytes = bytes
         vSoundEditor.maxColumnsCount = 800
         vSoundEditor.currentColumnsCount = 700
-        vSoundEditor.firstVisibleColumn = 0
+        vSoundEditor.firstVisibleColumn = 200
         vSoundEditor.rightSlideBar = 400
         vSoundEditor.leftSlideBar = 100
         vSoundEditor.soundDuration = soundDurationMs
-
-        vSoundEditor1.volumeColumns = getUBytes(900).toMutableList()
-        vSoundEditor1.maxColumnsCount = 800
-        vSoundEditor1.currentColumnsCount = 700
-        vSoundEditor1.firstVisibleColumn = 200
-        vSoundEditor1.rightSlideBar = 400
-        vSoundEditor1.leftSlideBar = 200
-        vSoundEditor1.soundDuration = soundDurationMs
     }
 
     private fun getUBytes(size: Int) = Random.nextUBytes(size)
