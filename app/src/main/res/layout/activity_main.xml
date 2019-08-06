@@ -14,38 +14,38 @@
         android:layout_height="200dp"
         android:padding="8dp"
         app:activeColumnsColor="@color/colorRed"
-        app:columnSpacingRatio="0.0"
+        app:columnSpacingRatio="1.0"
         app:currentColumnsCount="100"
         app:histogramBackground="@color/colorLightGray"
         app:inactiveColumnsColor="@color/colorGray"
         app:maxColumnsCount="200"
         app:minColumnsCount="50"
         app:slideBarsPaddingInColumns="10"
-        app:needToRoundColumns="true"
+        app:needToRoundColumns="false"
         app:slideBarsColor="@color/colorRed"/>
 
-    <SeekBar
-        android:id="@+id/sbLeft"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="8dp"/>
+    <!--<SeekBar-->
+        <!--android:id="@+id/sbLeft"-->
+        <!--android:layout_width="match_parent"-->
+        <!--android:layout_height="wrap_content"-->
+        <!--android:layout_marginStart="8dp"-->
+        <!--android:layout_marginTop="8dp"-->
+        <!--android:layout_marginEnd="8dp"/>-->
 
-    <SeekBar
-        android:id="@+id/sbRight"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="8dp"/>
+    <!--<SeekBar-->
+        <!--android:id="@+id/sbRight"-->
+        <!--android:layout_width="match_parent"-->
+        <!--android:layout_height="wrap_content"-->
+        <!--android:layout_marginStart="8dp"-->
+        <!--android:layout_marginTop="8dp"-->
+        <!--android:layout_marginEnd="8dp"/>-->
 
-    <SeekBar
-        android:id="@+id/sbFirstPosition"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="8dp"/>
+    <!--<SeekBar-->
+        <!--android:id="@+id/sbFirstPosition"-->
+        <!--android:layout_width="match_parent"-->
+        <!--android:layout_height="wrap_content"-->
+        <!--android:layout_marginStart="8dp"-->
+        <!--android:layout_marginTop="8dp"-->
+        <!--android:layout_marginEnd="8dp"/>-->
 
 </LinearLayout>
