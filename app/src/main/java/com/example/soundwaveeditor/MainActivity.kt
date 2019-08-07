@@ -23,8 +23,8 @@ class MainActivity : AppCompatActivity() {
 
         vSoundEditor.columnBytes = bytes
         vSoundEditor.maxColumnsCount = 800
-        vSoundEditor.currentColumnsCount = 200
-        vSoundEditor.firstVisibleColumn = 20
+        vSoundEditor.currentColumnsCount = 300
+        vSoundEditor.firstVisibleColumn = 0
         vSoundEditor.rightSlideBar = 150
         vSoundEditor.leftSlideBar = 50
         vSoundEditor.soundDuration = soundDurationMs

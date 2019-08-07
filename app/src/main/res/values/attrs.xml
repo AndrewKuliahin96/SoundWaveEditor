@@ -16,5 +16,8 @@
         <attr name="columnSpacingRatio" format="float"/>
         <attr name="columnVerticalPaddingRatio" format="float"/>
         <attr name="histogramTopPaddingRatio" format="float"/>
+        <attr name="supportFlingGesture" format="boolean"/>
+        <attr name="supportDoubleClickGesture" format="boolean"/>
+        <attr name="supportZoomGesture" format="boolean"/>
     </declare-styleable>
 </resources>
