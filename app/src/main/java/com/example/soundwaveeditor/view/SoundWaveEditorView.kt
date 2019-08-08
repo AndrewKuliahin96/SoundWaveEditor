@@ -151,7 +151,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         set(value) = field.getIfAndInvalidate(
             value, { value in (minColumnsCount + 1) until maxColumnsCount }, { field = it })
 
-    var slideBarsPaddingInColumns = DEFAULT_SLIDE_BARS_PADDING
+    var distanceBetweenSlideBarsInColumns = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, { value in 1 until currentColumnsCount }, {
             field = it
         })
@@ -184,14 +184,14 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
-            value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - slideBarsPaddingInColumns
+            value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - distanceBetweenSlideBarsInColumns
         }) {
             field = it
         }
 
     var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
-            value in leftSlideBar + slideBarsPaddingInColumns - 1 until currentColumnsCount - DEFAULT_SLIDE_BARS_PADDING
+            value in leftSlideBar + distanceBetweenSlideBarsInColumns - 1 until currentColumnsCount - DEFAULT_SLIDE_BARS_PADDING
         }) {
             field = when (it == currentColumnsCount) {
                 true -> it - 1
@@ -243,7 +243,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             currentColumnsCount =
                 getInt(R.styleable.SoundWaveEditorView_currentColumnsCount, DEFAULT_COLUMNS_COUNT)
 
-            slideBarsPaddingInColumns = getInt(
+            distanceBetweenSlideBarsInColumns = getInt(
                 R.styleable.SoundWaveEditorView_slideBarsPaddingInColumns,
                 DEFAULT_SLIDE_BARS_PADDING
             )
@@ -346,17 +346,41 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             eventResult = gestureDetector.onTouchEvent(event)
         }
 
+        if (event.action == MotionEvent.ACTION_UP) {
+            lastXTouchPosition = null
+        }
+
         return eventResult
     }
 
     override fun onDoubleTap(event: MotionEvent): Boolean {
         return if (supportDoubleClickGesture) {
+
+            val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
+
+            val tapPosition = (event.x / columnWidthAndSpacing).toInt()
+
+            currentColumnsCount = if (currentColumnsCount == minColumnsCount + 1) {
+                maxColumnsCount - 1
+            } else {
+                minColumnsCount + 1
+            }
+
+            firstVisibleColumn = firstVisibleColumn + tapPosition
+
             // TODO scale hist
+
+
+            getWidthAndSpacing()
+            invalidate()
+
             Log.e("GESTURES", "onDoubleTap")
 
             true
         } else false
     }
+
+    private var lastXTouchPosition: Float? = null
 
     // TODO this peace of sh*it works incorrect, need to fix
     // TODO perform events onDown or onShowPress
@@ -366,10 +390,17 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         distanceX: Float,
         distanceY: Float
     ): Boolean {
-        val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
-        val scrollColumns = (distanceX / columnWidthAndSpacing).toInt()
+        Log.e("ON SCROLL", "${firstEvent?.x?.toInt()} ${triggerEvent?.x?.toInt()} ${distanceX.toInt()}")
 
-        firstEvent?.x?.let {
+        val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
+
+        if (lastXTouchPosition == null) {
+            lastXTouchPosition = firstEvent?.x
+        }
+
+        lastXTouchPosition?.let {
+            val scrollColumns = (distanceX / columnWidthAndSpacing).toInt()
+
             val leftSlideBarPosition = leftSlideBar * columnWidthAndSpacing
             val rightSlideBarPosition = rightSlideBar * columnWidthAndSpacing
 
@@ -383,25 +414,30 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
             when (it) {
                 in leftSlideBarZone -> {
+                    Log.e("SCROLLING", "left $it $scrollColumns $leftSlideBarZone")
+
                     leftSlideBar -= scrollColumns
                 }
 
                 in rightSlideBarZone -> {
+                    Log.e("SCROLLING", "right $it $scrollColumns")
+
                     rightSlideBar -= scrollColumns
                 }
 
                 in (leftSlideBarZone.endInclusive + 1 .. rightSlideBarZone.start - 1) -> {
+                    Log.e("SCROLLING", "middle $it $scrollColumns")
+
                     leftSlideBar -= scrollColumns
                     rightSlideBar -= scrollColumns
                 }
 
-                else -> {
+                in ZERO_SIZE_F .. leftSlideBarZone.start - 1, in rightSlideBarZone.endInclusive + 1 .. fWidth -> {
+                    Log.e("SCROLLING", "else $it $scrollColumns")
+
                     firstVisibleColumn += scrollColumns
                 }
             }
-
-        } ?: let {
-            firstVisibleColumn += scrollColumns
         }
 
         return true
@@ -418,23 +454,17 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     override fun onScale(scaleDetector: ScaleGestureDetector?): Boolean {
         return if (supportZoomGesture) {
-            val scaleFactor = scaleDetector?.scaleFactor ?: 0F
-
-            if (scaleFactor < 1F) {
+            scaleDetector?.scaleFactor?.takeIf { it < 1F }?.let {
                 currentColumnsCount++
-            } else {
-                currentColumnsCount--
-            }
+            } ?: currentColumnsCount--
 
             getWidthAndSpacing()
             invalidate()
 
-//            mScaleFactor *= scaleGestureDetector.getScaleFactor();
+//           val mScaleFactor *= scaleGestureDetector.getScaleFactor();
 //            mScaleFactor = Math.max(0.1f,
 //                Math.min(mScaleFactor, 10.0f));
-//            mImageView.setScaleX(mScaleFactor);
-//            mImageView.setScaleY(mScaleFactor);
-            Log.e("GESTURES", "onScale, $scaleFactor")
+//            setScaleX(mScaleFactor)
 
             true
         } else false
@@ -460,6 +490,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     override fun onSingleTapUp(event: MotionEvent?) = true.apply {
+//        lastXTouchPosition = null
+
         Log.e("GESTURES", "onSingleTapUp")
     }
 
