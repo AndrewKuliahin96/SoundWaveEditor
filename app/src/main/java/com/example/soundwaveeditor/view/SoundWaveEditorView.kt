@@ -356,25 +356,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     override fun onDoubleTap(event: MotionEvent): Boolean {
         return if (supportDoubleClickGesture) {
 
-            val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
-
-            val tapPosition = (event.x / columnWidthAndSpacing).toInt()
-
-            currentColumnsCount = if (currentColumnsCount == minColumnsCount + 1) {
-                maxColumnsCount - 1
-            } else {
-                minColumnsCount + 1
-            }
-
-            firstVisibleColumn = firstVisibleColumn + tapPosition
-
-            // TODO scale hist
 
 
             getWidthAndSpacing()
             invalidate()
-
-            Log.e("GESTURES", "onDoubleTap")
 
             true
         } else false
@@ -382,8 +367,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private var lastXTouchPosition: Float? = null
 
-    // TODO this peace of sh*it works incorrect, need to fix
-    // TODO perform events onDown or onShowPress
     override fun onScroll(
         firstEvent: MotionEvent?,
         triggerEvent: MotionEvent?,
@@ -416,13 +399,17 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 in leftSlideBarZone -> {
                     Log.e("SCROLLING", "left $it $scrollColumns $leftSlideBarZone")
 
-                    leftSlideBar -= scrollColumns
+                    leftSlideBar.takeIf { leftSB -> leftSB + spacingBetweenColumns < rightSlideBar }?.let {
+                        leftSlideBar -= scrollColumns
+                    }
                 }
 
                 in rightSlideBarZone -> {
                     Log.e("SCROLLING", "right $it $scrollColumns")
 
-                    rightSlideBar -= scrollColumns
+                    rightSlideBar.takeIf { rightSB -> rightSB - spacingBetweenColumns > leftSlideBar }?.let {
+                        rightSlideBar -= scrollColumns
+                    }
                 }
 
                 in (leftSlideBarZone.endInclusive + 1 .. rightSlideBarZone.start - 1) -> {
@@ -437,6 +424,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
                     firstVisibleColumn += scrollColumns
                 }
+
+                else -> Unit
             }
         }
 
@@ -461,11 +450,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             getWidthAndSpacing()
             invalidate()
 
-//           val mScaleFactor *= scaleGestureDetector.getScaleFactor();
-//            mScaleFactor = Math.max(0.1f,
-//                Math.min(mScaleFactor, 10.0f));
-//            setScaleX(mScaleFactor)
-
             true
         } else false
     }
@@ -489,9 +473,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         } else false
     }
 
+    // TODO remove all logs below
     override fun onSingleTapUp(event: MotionEvent?) = true.apply {
-//        lastXTouchPosition = null
-
         Log.e("GESTURES", "onSingleTapUp")
     }
 
@@ -586,9 +569,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         histogramYAxis =
             histogramHeight / 2F + histogramTopPadding + fHeight * columnVerticalPaddingRatio / 2F
 
-        val heightMin = histogramHeight / UByte.MAX_VALUE.toFloat()
+        initColumns()
+    }
 
+    private fun initColumns() {
         columns.clear()
+
+        val heightMin = histogramHeight / UByte.MAX_VALUE.toFloat()
 
         columnBytes.forEach { uByte ->
             val halfOfColumnHeight = (heightMin * uByte.toFloat() - histogramTopPadding) / 2F
