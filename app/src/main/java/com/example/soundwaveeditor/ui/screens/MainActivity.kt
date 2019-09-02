@@ -1,7 +1,8 @@
-package com.example.soundwaveeditor
+package com.example.soundwaveeditor.ui.screens
 
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import com.example.soundwaveeditor.R
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlin.random.Random
 import kotlin.random.nextUBytes

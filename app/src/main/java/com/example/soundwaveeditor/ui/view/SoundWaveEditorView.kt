@@ -1,4 +1,4 @@
-package com.example.soundwaveeditor.view
+package com.example.soundwaveeditor.ui.view
 
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
@@ -356,7 +356,31 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     override fun onDoubleTap(event: MotionEvent): Boolean {
         return if (supportDoubleClickGesture) {
 
+            val touchedColumn = event.x / (columnWidth + spacingBetweenColumns)
 
+            when (currentColumnsCount) {
+                minColumnsCount + 1 -> {
+                    currentColumnsCount = maxColumnsCount - 1
+
+                    var newFirstVisibleColumn = (maxColumnsCount - (firstVisibleColumn + touchedColumn)).toInt()
+
+                    while (newFirstVisibleColumn >= columns.size - maxColumnsCount - 10) {
+                        Log.e("MORE THAN SIZE", "dec iter")
+
+                        newFirstVisibleColumn--
+                    }
+
+                    Log.e("FIRST", "$newFirstVisibleColumn")
+
+                    firstVisibleColumn = newFirstVisibleColumn
+                }
+
+                else -> {
+                    currentColumnsCount = minColumnsCount + 1
+
+                    firstVisibleColumn = (firstVisibleColumn + touchedColumn - minColumnsCount / 2).toInt()
+                }
+            }
 
             getWidthAndSpacing()
             invalidate()
@@ -395,13 +419,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             val rightSlideBarZone =
                 (rightSlideBarPosition - zoneThreshold.. rightSlideBarPosition + zoneThreshold)
 
-            when (it) {
+            return when (it) {
                 in leftSlideBarZone -> {
                     Log.e("SCROLLING", "left $it $scrollColumns $leftSlideBarZone")
 
                     leftSlideBar.takeIf { leftSB -> leftSB + spacingBetweenColumns < rightSlideBar }?.let {
                         leftSlideBar -= scrollColumns
                     }
+
+                    false
                 }
 
                 in rightSlideBarZone -> {
@@ -410,6 +436,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     rightSlideBar.takeIf { rightSB -> rightSB - spacingBetweenColumns > leftSlideBar }?.let {
                         rightSlideBar -= scrollColumns
                     }
+
+                    false
                 }
 
                 in (leftSlideBarZone.endInclusive + 1 .. rightSlideBarZone.start - 1) -> {
@@ -417,15 +445,19 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
                     leftSlideBar -= scrollColumns
                     rightSlideBar -= scrollColumns
+
+                    false
                 }
 
                 in ZERO_SIZE_F .. leftSlideBarZone.start - 1, in rightSlideBarZone.endInclusive + 1 .. fWidth -> {
                     Log.e("SCROLLING", "else $it $scrollColumns")
 
                     firstVisibleColumn += scrollColumns
+
+                    false
                 }
 
-                else -> Unit
+                else -> false
             }
         }
 
@@ -474,6 +506,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     // TODO remove all logs below
+
     override fun onSingleTapUp(event: MotionEvent?) = true.apply {
         Log.e("GESTURES", "onSingleTapUp")
     }
@@ -482,6 +515,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         Log.e("GESTURES", "onDown")
     }
 
+    // TODO add playing and seek audio functionality on single tap
     override fun onSingleTapConfirmed(event: MotionEvent?) = true.apply {
         Log.e("GESTURES", "onSingleTapConfirmed")
     }
