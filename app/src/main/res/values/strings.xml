@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">Sound Wave Editor</string>
+    <string name="dialog_ok">OK</string>
+    <string name="dialog_cancel">Cancel</string>
+
+    <string-array name="photo_array">
+        <item>Photo camera</item>
+        <item>Upload from gallery</item>
+    </string-array>
+
+    <string name="add_photo">Add photo</string>
 </resources>

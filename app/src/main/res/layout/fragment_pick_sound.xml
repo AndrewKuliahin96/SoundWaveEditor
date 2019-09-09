@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".ui.screens.main.MainActivity">
+
+    <com.example.soundwaveeditor.ui.view.SoundWaveEditorView
+        android:id="@+id/vSoundEditor"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:padding="8dp"
+        app:activeColumnsColor="@color/colorRed"
+        app:columnSpacingRatio="0.0"
+        app:histogramBackground="@color/colorLightGray"
+        app:inactiveColumnsColor="@color/colorGray"
+        app:slideBarsPaddingInColumns="10"
+        app:needToRoundColumns="true"
+        app:slideBarsColor="@color/colorRed"
+        android:visibility="gone"/>
+
+    <TextView
+        android:id="@+id/tvFrequency"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <TextView
+        android:id="@+id/tvFormat"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <TextView
+        android:id="@+id/tvDuration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+
+    <TextView
+        android:id="@+id/tvBitrate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+</LinearLayout>

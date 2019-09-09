@@ -7,17 +7,15 @@
         <attr name="slideBarsColor" format="color"/>
         <attr name="timeTextColor" format="color"/>
         <attr name="timeTextSize" format="dimension"/>
-        <attr name="maxColumnsCount" format="integer"/>
-        <attr name="minColumnsCount" format="integer"/>
-        <attr name="currentColumnsCount" format="integer"/>
-        <attr name="soundDuration" format="integer"/>
+        <attr name="maxVisibleColumnsCount" format="integer"/>
+        <attr name="minVisibleColumnsCount" format="integer"/>
+        <attr name="currentVisibleColumnsCount" format="integer"/>
+        <attr name="maxTrimLengthInSeconds" format="integer"/>
+        <attr name="minTrimLengthInSeconds" format="integer"/>
         <attr name="slideBarsPaddingInColumns" format="integer"/>
         <attr name="needToRoundColumns" format="boolean"/>
         <attr name="columnSpacingRatio" format="float"/>
         <attr name="columnVerticalPaddingRatio" format="float"/>
         <attr name="histogramTopPaddingRatio" format="float"/>
-        <attr name="supportFlingGesture" format="boolean"/>
-        <attr name="supportDoubleClickGesture" format="boolean"/>
-        <attr name="supportZoomGesture" format="boolean"/>
     </declare-styleable>
 </resources>

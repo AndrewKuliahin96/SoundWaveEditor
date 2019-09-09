@@ -1,26 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    tools:context=".ui.screens.MainActivity">
+    android:layout_height="match_parent">
 
-    <com.example.soundwaveeditor.ui.view.SoundWaveEditorView
-        android:id="@+id/vSoundEditor"
+    <FrameLayout
+        android:id="@+id/container"
         android:layout_width="match_parent"
-        android:layout_height="200dp"
-        android:padding="8dp"
-        app:activeColumnsColor="@color/colorRed"
-        app:columnSpacingRatio="0.0"
-        app:histogramBackground="@color/colorLightGray"
-        app:inactiveColumnsColor="@color/colorGray"
-        app:slideBarsPaddingInColumns="10"
-        app:needToRoundColumns="true"
-        app:slideBarsColor="@color/colorRed"
-        app:supportFlingGesture="true"
-        app:supportDoubleClickGesture="true"
-        app:supportZoomGesture="true"/>
-</LinearLayout>
+        android:layout_height="match_parent" />
+
+    <include layout="@layout/include_progress" />
+</RelativeLayout>

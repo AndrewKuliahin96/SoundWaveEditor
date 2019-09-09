@@ -1,45 +1,45 @@
 package com.example.soundwaveeditor.ui.view
 
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
-import android.util.Log
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import androidx.core.content.ContextCompat
-import androidx.core.view.GestureDetectorCompat
 import com.example.soundwaveeditor.R
-import kotlin.math.absoluteValue
+import com.example.soundwaveeditor.songmetadatareader.SongMetadataReader
+import java.io.File
+import java.lang.ref.WeakReference
 
 
 @ExperimentalUnsignedTypes
 class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context, attrs),
-    GestureDetector.OnGestureListener,
-    GestureDetector.OnDoubleTapListener,
     ScaleGestureDetector.OnScaleGestureListener {
 
     companion object {
         private const val MINUTES_TWO_SYMBOLS_TIME_FORMAT = "%02d:%02d"
         private const val MINUTES_ONE_SYMBOL_TIME_FORMAT = "%01d:%02d"
-        private const val FLING_GESTURE_TRIGGER_THRESHOLD = 6_000F
         private const val DEFAULT_VERTICAL_PADDING_RATIO = 0.25F
         private const val DEFAULT_HISTOGRAM_TOP_PADDING = 0.1F
         private const val DEFAULT_TIME_TEXT_SIZE = 14F
         private const val DEFAULT_COLUMNS_RATIO = 1F
         private const val ZERO_SIZE_F = 0F
         private const val ZERO_SIZE = 0
+        private const val DEFAULT_MAX_TRIM_LENGTH_IN_SEC = 10
+        private const val DEFAULT_MIN_TRIM_LENGTH_IN_SEC = 0
         private const val DEFAULT_SLIDE_BARS_PADDING = 10
-        private const val DEFAULT_MAX_COLUMNS_COUNT = 100
-        private const val DEFAULT_MIN_COLUMNS_COUNT = 50
-        private const val DEFAULT_COLUMNS_COUNT = 50
-        private const val ZERO_SOUND_DURATION = 0
+        private const val DEFAULT_MAX_COLUMNS_COUNT = 500
+        private const val DEFAULT_MIN_COLUMNS_COUNT = 200
+        private const val DEFAULT_COLUMNS_COUNT = 300
+        private const val NO_MOVE = -1
+        private const val MOVE_SLIDE = 2
+        private const val MOVE_LEFT = 4
+        private const val MOVE_RIGHT = 8
+        private const val MOVE_CENTER = 16
     }
 
-    private var gestureDetector: GestureDetectorCompat
     private var scaleDetector: ScaleGestureDetector
 
     private val histogramTopPaddingRatioRange = 0F..2F
@@ -58,19 +58,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var histogramYAxis = ZERO_SIZE_F
     private var histogramHeight = ZERO_SIZE_F
 
+    private var position = 0F
+    private var movin = NO_MOVE
     private var isScaling = false
-
-    var supportFlingGesture = false
-        private set
-
-    var supportDoubleClickGesture = false
-        private set
-
-    var supportZoomGesture = false
-        private set
-
-    private var valueAnimator: ValueAnimator? = null
-    private var finishValue: Int = ZERO_SIZE
 
     private var histogramBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -137,22 +127,22 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             slideBarPaint.color = it
         }
 
-    var maxColumnsCount = DEFAULT_MAX_COLUMNS_COUNT
-        set(value) = field.getIfAndInvalidate(value, { value >= currentColumnsCount }, {
+    var maxVisibleColumnsCount = DEFAULT_MAX_COLUMNS_COUNT
+        set(value) = field.getIfAndInvalidate(value, { value >= currentVisibleColumnsCount }, {
             field = it
         })
 
-    var minColumnsCount = DEFAULT_MIN_COLUMNS_COUNT
-        set(value) = field.getIfAndInvalidate(value, { value < currentColumnsCount }, {
+    var minVisibleColumnsCount = DEFAULT_MIN_COLUMNS_COUNT
+        set(value) = field.getIfAndInvalidate(value, { value < currentVisibleColumnsCount }, {
             field = it
         })
 
-    var currentColumnsCount = DEFAULT_COLUMNS_COUNT
+    var currentVisibleColumnsCount = DEFAULT_COLUMNS_COUNT
         set(value) = field.getIfAndInvalidate(
-            value, { value in (minColumnsCount + 1) until maxColumnsCount }, { field = it })
+            value, { value in (minVisibleColumnsCount + 1) until maxVisibleColumnsCount }, { field = it })
 
     var distanceBetweenSlideBarsInColumns = DEFAULT_SLIDE_BARS_PADDING
-        set(value) = field.getIfAndInvalidate(value, { value in 1 until currentColumnsCount }, {
+        set(value) = field.getIfAndInvalidate(value, { value in 1 until currentVisibleColumnsCount }, {
             field = it
         })
 
@@ -177,11 +167,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     var firstVisibleColumn = ZERO_SIZE
         set(value) = field.getIfAndInvalidate(value, {
-            value in 0..columnBytes.size - currentColumnsCount
+            value in 0..columnBytes.size - currentVisibleColumnsCount
         }) {
             field = it
         }
 
+    // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
     var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
             value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - distanceBetweenSlideBarsInColumns
@@ -189,25 +180,46 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             field = it
         }
 
+    // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
     var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
-            value in leftSlideBar + distanceBetweenSlideBarsInColumns - 1 until currentColumnsCount - DEFAULT_SLIDE_BARS_PADDING
+            value in leftSlideBar + distanceBetweenSlideBarsInColumns - 1 until currentVisibleColumnsCount - DEFAULT_SLIDE_BARS_PADDING
         }) {
-            field = when (it == currentColumnsCount) {
+            field = when (it == currentVisibleColumnsCount) {
                 true -> it - 1
                 false -> it
             }
         }
 
-    var gestureBuilder: GestureBuilder
+    var soundFile: String? = null
+        set(value) = field.getIfAndInvalidate(value, {
+            value?.takeIf { it != field }?.let { true } ?: false
+        }) {
+            it?.let { path ->
+                field = path
+                processAudioFile(path)
+            }
+        }
 
-    var columnBytes = mutableListOf<UByte>()
+    var minTrimLengthInSeconds = DEFAULT_MIN_TRIM_LENGTH_IN_SEC
+        set(value) = field.getIfAndInvalidate(value, {
+            value in 1 until maxTrimLengthInSeconds
+        }) { field = it }
+
+    var maxTrimLengthInSeconds = DEFAULT_MAX_TRIM_LENGTH_IN_SEC
+        set(value) = field.getIfAndInvalidate(value, {
+            value in (minTrimLengthInSeconds + 1) until soundDuration
+        }) { field = it }
+
+    var columnBytes = mutableListOf<Short>()
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     init {
         context.theme.obtainStyledAttributes(attrs, R.styleable.SoundWaveEditorView, 0, 0).apply {
-            timeTextSize =
-                getDimension(R.styleable.SoundWaveEditorView_timeTextSize, DEFAULT_TIME_TEXT_SIZE)
+            timeTextSize = getDimension(
+                R.styleable.SoundWaveEditorView_timeTextSize,
+                DEFAULT_TIME_TEXT_SIZE
+            )
 
             timeTextColor = getColor(
                 R.styleable.SoundWaveEditorView_timeTextColor,
@@ -234,43 +246,38 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 ContextCompat.getColor(context, android.R.color.holo_red_light)
             )
 
-            maxColumnsCount =
-                getInt(R.styleable.SoundWaveEditorView_maxColumnsCount, DEFAULT_MAX_COLUMNS_COUNT)
+            maxVisibleColumnsCount = getInt(
+                R.styleable.SoundWaveEditorView_maxVisibleColumnsCount,
+                DEFAULT_MAX_COLUMNS_COUNT
+            )
 
-            minColumnsCount =
-                getInt(R.styleable.SoundWaveEditorView_minColumnsCount, DEFAULT_MIN_COLUMNS_COUNT)
+            minVisibleColumnsCount = getInt(
+                R.styleable.SoundWaveEditorView_minVisibleColumnsCount,
+                DEFAULT_MIN_COLUMNS_COUNT
+            )
 
-            currentColumnsCount =
-                getInt(R.styleable.SoundWaveEditorView_currentColumnsCount, DEFAULT_COLUMNS_COUNT)
+            currentVisibleColumnsCount = getInt(
+                R.styleable.SoundWaveEditorView_currentVisibleColumnsCount,
+                DEFAULT_COLUMNS_COUNT
+            )
+
+            maxTrimLengthInSeconds = getInt(
+                R.styleable.SoundWaveEditorView_maxTrimLengthInSeconds,
+                DEFAULT_MAX_TRIM_LENGTH_IN_SEC
+            )
+
+            minTrimLengthInSeconds = getInt(
+                R.styleable.SoundWaveEditorView_minTrimLengthInSeconds,
+                DEFAULT_MIN_TRIM_LENGTH_IN_SEC
+            )
 
             distanceBetweenSlideBarsInColumns = getInt(
                 R.styleable.SoundWaveEditorView_slideBarsPaddingInColumns,
                 DEFAULT_SLIDE_BARS_PADDING
             )
 
-            soundDuration =
-                getInt(R.styleable.SoundWaveEditorView_soundDuration, ZERO_SOUND_DURATION)
-
             needToRoundColumns =
                 getBoolean(R.styleable.SoundWaveEditorView_needToRoundColumns, false)
-
-            gestureBuilder = GestureBuilder().apply {
-                setSupportFlingGesture(
-                    getBoolean(R.styleable.SoundWaveEditorView_supportFlingGesture, false)
-                )
-
-                setSupportDoubleClickGesture(
-                    getBoolean(
-                        R.styleable.SoundWaveEditorView_supportDoubleClickGesture, false
-                    )
-                )
-
-                setSupportZoomGesture(
-                    getBoolean(R.styleable.SoundWaveEditorView_supportZoomGesture, false)
-                )
-
-                build()
-            }
 
             columnSpacingRatio =
                 getFloat(R.styleable.SoundWaveEditorView_columnSpacingRatio, DEFAULT_COLUMNS_RATIO)
@@ -294,7 +301,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             textSize = timeTextSize
         }
 
-        gestureDetector = GestureDetectorCompat(context, this)
         scaleDetector = ScaleGestureDetector(context, this)
     }
 
@@ -306,7 +312,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     override fun onDraw(canvas: Canvas) = canvas.run {
         drawRect(histogramBackgroundRectF, histogramBackgroundPaint)
 
-        val lastVisibleItem = firstVisibleColumn + currentColumnsCount
+        val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
         columns.takeIf { it.size >= lastVisibleItem }
             ?.subList(firstVisibleColumn, lastVisibleItem)
@@ -318,7 +324,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     leftSlideBar, rightSlideBar -> slideBarPaint.apply { isSlideBar = true }
                     else -> inactiveColumnsPaint
                 }.let { paint ->
-                    val leftColumnSide = index * columnWidth + index * spacingBetweenColumns
+                    val leftColumnSide = index * (columnWidth + spacingBetweenColumns)
 
                     drawingRectF.run {
                         left = leftColumnSide
@@ -340,128 +346,53 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        var eventResult = scaleDetector.onTouchEvent(event)
+        val eventResult = scaleDetector.onTouchEvent(event)
 
         if (!isScaling) {
-            eventResult = gestureDetector.onTouchEvent(event)
-        }
-
-        if (event.action == MotionEvent.ACTION_UP) {
-            lastXTouchPosition = null
-        }
-
-        return eventResult
-    }
-
-    override fun onDoubleTap(event: MotionEvent): Boolean {
-        return if (supportDoubleClickGesture) {
-
-            val touchedColumn = event.x / (columnWidth + spacingBetweenColumns)
-
-            when (currentColumnsCount) {
-                minColumnsCount + 1 -> {
-                    currentColumnsCount = maxColumnsCount - 1
-
-                    var newFirstVisibleColumn = (maxColumnsCount - (firstVisibleColumn + touchedColumn)).toInt()
-
-                    while (newFirstVisibleColumn >= columns.size - maxColumnsCount - 10) {
-                        Log.e("MORE THAN SIZE", "dec iter")
-
-                        newFirstVisibleColumn--
-                    }
-
-                    Log.e("FIRST", "$newFirstVisibleColumn")
-
-                    firstVisibleColumn = newFirstVisibleColumn
-                }
-
-                else -> {
-                    currentColumnsCount = minColumnsCount + 1
-
-                    firstVisibleColumn = (firstVisibleColumn + touchedColumn - minColumnsCount / 2).toInt()
-                }
-            }
-
-            getWidthAndSpacing()
-            invalidate()
-
-            true
-        } else false
-    }
-
-    private var lastXTouchPosition: Float? = null
-
-    override fun onScroll(
-        firstEvent: MotionEvent?,
-        triggerEvent: MotionEvent?,
-        distanceX: Float,
-        distanceY: Float
-    ): Boolean {
-        Log.e("ON SCROLL", "${firstEvent?.x?.toInt()} ${triggerEvent?.x?.toInt()} ${distanceX.toInt()}")
-
-        val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
-
-        if (lastXTouchPosition == null) {
-            lastXTouchPosition = firstEvent?.x
-        }
-
-        lastXTouchPosition?.let {
-            val scrollColumns = (distanceX / columnWidthAndSpacing).toInt()
+            val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
 
             val leftSlideBarPosition = leftSlideBar * columnWidthAndSpacing
             val rightSlideBarPosition = rightSlideBar * columnWidthAndSpacing
 
-            val zoneThreshold = 25
-
-            val leftSlideBarZone =
-                (leftSlideBarPosition - zoneThreshold .. leftSlideBarPosition + zoneThreshold)
-
-            val rightSlideBarZone =
-                (rightSlideBarPosition - zoneThreshold.. rightSlideBarPosition + zoneThreshold)
-
-            return when (it) {
-                in leftSlideBarZone -> {
-                    Log.e("SCROLLING", "left $it $scrollColumns $leftSlideBarZone")
-
-                    leftSlideBar.takeIf { leftSB -> leftSB + spacingBetweenColumns < rightSlideBar }?.let {
-                        leftSlideBar -= scrollColumns
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    movin = when (event.x) {
+                        in 0F..leftSlideBarPosition - 10F, in rightSlideBarPosition + 10F..width.toFloat() -> MOVE_SLIDE
+                        in leftSlideBarPosition - 10F..leftSlideBarPosition + 10F -> MOVE_LEFT
+                        in rightSlideBarPosition - 10F..rightSlideBarPosition + 10F -> MOVE_RIGHT
+                        in leftSlideBarPosition + 10F..rightSlideBarPosition - 10F -> MOVE_CENTER
+                        else -> NO_MOVE
                     }
 
-                    false
+                    position = event.x
                 }
 
-                in rightSlideBarZone -> {
-                    Log.e("SCROLLING", "right $it $scrollColumns")
-
-                    rightSlideBar.takeIf { rightSB -> rightSB - spacingBetweenColumns > leftSlideBar }?.let {
-                        rightSlideBar -= scrollColumns
+                MotionEvent.ACTION_MOVE -> {
+                    ((event.x - position) / (columnWidth + spacingBetweenColumns)).toInt().let {
+                        when (movin) {
+                            MOVE_SLIDE -> firstVisibleColumn -= it
+                            MOVE_LEFT -> leftSlideBar += it
+                            MOVE_RIGHT -> rightSlideBar += it
+                            MOVE_CENTER -> {
+                                leftSlideBar += it
+                                rightSlideBar += it
+                            }
+                        }
                     }
 
-                    false
+                    position = event.x
                 }
 
-                in (leftSlideBarZone.endInclusive + 1 .. rightSlideBarZone.start - 1) -> {
-                    Log.e("SCROLLING", "middle $it $scrollColumns")
-
-                    leftSlideBar -= scrollColumns
-                    rightSlideBar -= scrollColumns
-
-                    false
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    position = 0F
+                    movin = NO_MOVE
                 }
 
-                in ZERO_SIZE_F .. leftSlideBarZone.start - 1, in rightSlideBarZone.endInclusive + 1 .. fWidth -> {
-                    Log.e("SCROLLING", "else $it $scrollColumns")
-
-                    firstVisibleColumn += scrollColumns
-
-                    false
-                }
-
-                else -> false
+                else -> Unit
             }
         }
 
-        return true
+        return eventResult
     }
 
     override fun onScaleBegin(scaleDetector: ScaleGestureDetector?): Boolean {
@@ -474,80 +405,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     override fun onScale(scaleDetector: ScaleGestureDetector?): Boolean {
-        return if (supportZoomGesture) {
-            scaleDetector?.scaleFactor?.takeIf { it < 1F }?.let {
-                currentColumnsCount++
-            } ?: currentColumnsCount--
+        scaleDetector?.scaleFactor?.takeIf { it < 1F }?.let {
+            currentVisibleColumnsCount += 5
 
-            getWidthAndSpacing()
-            invalidate()
-
-            true
-        } else false
-    }
-
-    override fun onFling(
-        firstEvent: MotionEvent?,
-        triggerEvent: MotionEvent?,
-        velocityX: Float,
-        velocityY: Float
-    ): Boolean {
-        return if (supportFlingGesture) {
-            valueAnimator?.takeIf { it.isRunning }?.apply {
-                val oldFlingEnd = finishValue == ZERO_SIZE
-                val newFlingEnd = velocityX > ZERO_SIZE
-
-                if ((oldFlingEnd && newFlingEnd) || (!oldFlingEnd && !newFlingEnd)) {
-                    duration /= 2
-                } else cancel()
-            } ?: startOnFlingAnimation(velocityX)
-            true
-        } else false
-    }
-
-    // TODO remove all logs below
-
-    override fun onSingleTapUp(event: MotionEvent?) = true.apply {
-        Log.e("GESTURES", "onSingleTapUp")
-    }
-
-    override fun onDown(event: MotionEvent?) = true.apply {
-        Log.e("GESTURES", "onDown")
-    }
-
-    // TODO add playing and seek audio functionality on single tap
-    override fun onSingleTapConfirmed(event: MotionEvent?) = true.apply {
-        Log.e("GESTURES", "onSingleTapConfirmed")
-    }
-
-    override fun onDoubleTapEvent(event: MotionEvent?) = true.apply {
-        Log.e("GESTURES", "onDoubleTapEvent")
-    }
-
-    override fun onLongPress(event: MotionEvent?) = Unit.apply {
-        Log.e("GESTURES", "onLongPress")
-    }
-
-    override fun onShowPress(event: MotionEvent?) = Unit.apply {
-        Log.e("GESTURES", "onShowPress")
-    }
-
-    private fun startOnFlingAnimation(flingPower: Float) {
-        if (flingPower.absoluteValue > FLING_GESTURE_TRIGGER_THRESHOLD) {
-            finishValue = flingPower.takeIf { it > ZERO_SIZE }?.let { ZERO_SIZE } ?: let {
-                columnBytes.size - currentColumnsCount
+            while(firstVisibleColumn + currentVisibleColumnsCount >= columns.size - 10) {
+                firstVisibleColumn -= 5
             }
+        } ?: let { currentVisibleColumnsCount -= 5 }
 
-            valueAnimator = ValueAnimator.ofInt(firstVisibleColumn, finishValue).apply {
-                duration = (firstVisibleColumn - finishValue).absoluteValue.toLong() * 2
+        getWidthAndSpacing()
+        invalidate()
 
-                addUpdateListener { animation ->
-                    firstVisibleColumn = animation.animatedValue as Int
-                }
-                start()
-            }
-
-        } else return
+        return true
     }
 
     private fun getTimeAndPosition(position: Int, result: (String, Float, Float) -> Unit) {
@@ -609,10 +478,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun initColumns() {
         columns.clear()
 
-        val heightMin = histogramHeight / UByte.MAX_VALUE.toFloat()
+        val heightMin = histogramHeight / Short.MAX_VALUE.toFloat()
 
-        columnBytes.forEach { uByte ->
-            val halfOfColumnHeight = (heightMin * uByte.toFloat() - histogramTopPadding) / 2F
+        columnBytes.forEach { short ->
+            val halfOfColumnHeight = (heightMin * short.toFloat() - histogramTopPadding) / 2F
 
             columns.add(
                 ColumnSize(
@@ -624,11 +493,31 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private fun getWidthAndSpacing() {
         columnWidth =
-            fWidth / (currentColumnsCount + (currentColumnsCount - 1) * columnSpacingRatio)
+            fWidth / (currentVisibleColumnsCount + (currentVisibleColumnsCount - 1) * columnSpacingRatio)
 
         columnRadius = columnWidth / 2F
 
         spacingBetweenColumns = columnWidth * columnSpacingRatio
+    }
+
+    private fun processAudioFile(filePath: String) {
+        val file = File(filePath)
+        var soundFile: SoundFile? = null
+
+        SongMetadataReader(WeakReference(context), filePath).let {
+            it.title
+            it.artist
+
+            soundFile = SoundFile(filePath, it.title, it.artist, it.album, it.year)
+        }
+
+        val titleLabel = ""
+
+//        if () {
+//
+//        }
+
+
     }
 
     private fun <T> T.getIfAndInvalidate(
@@ -650,38 +539,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private data class ColumnSize(var top: Float, var bottom: Float)
 
-    inner class GestureBuilder {
-        private var supportFlingGesture = false
-
-        private var supportDoubleClickGesture = false
-
-        private var supportZoomGesture = false
-
-        private var needToInvalidate = false
-
-        fun setSupportFlingGesture(support: Boolean) = run {
-            this.supportFlingGesture = support
-            needToInvalidate = true
-        }
-
-        fun setSupportDoubleClickGesture(support: Boolean) = run {
-            this.supportDoubleClickGesture = support
-            needToInvalidate = true
-        }
-
-        fun setSupportZoomGesture(support: Boolean) = run {
-            this.supportZoomGesture = support
-            needToInvalidate = true
-        }
-
-        fun build() {
-            this@SoundWaveEditorView.supportFlingGesture = this.supportFlingGesture
-            this@SoundWaveEditorView.supportDoubleClickGesture = this.supportDoubleClickGesture
-            this@SoundWaveEditorView.supportZoomGesture = this.supportZoomGesture
-
-            if (needToInvalidate) invalidate()
-
-            needToInvalidate = false
-        }
-    }
+    private data class SoundFile(
+        val filePath: String,
+        val title: String?,
+        val artist: String?,
+        val album: String?,
+        val year: Int?
+    )
 }
