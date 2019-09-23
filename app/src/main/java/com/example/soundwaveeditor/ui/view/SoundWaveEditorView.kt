@@ -9,9 +9,6 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
-import com.example.soundwaveeditor.songmetadatareader.SongMetadataReader
-import java.io.File
-import java.lang.ref.WeakReference
 
 
 @ExperimentalUnsignedTypes
@@ -191,16 +188,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             }
         }
 
-    var soundFile: String? = null
-        set(value) = field.getIfAndInvalidate(value, {
-            value?.takeIf { it != field }?.let { true } ?: false
-        }) {
-            it?.let { path ->
-                field = path
-                processAudioFile(path)
-            }
-        }
-
     var minTrimLengthInSeconds = DEFAULT_MIN_TRIM_LENGTH_IN_SEC
         set(value) = field.getIfAndInvalidate(value, {
             value in 1 until maxTrimLengthInSeconds
@@ -211,7 +198,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             value in (minTrimLengthInSeconds + 1) until soundDuration
         }) { field = it }
 
-    var columnBytes = mutableListOf<Short>()
+    var columnBytes = mutableListOf<Byte>()
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     init {
@@ -350,7 +337,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         if (!isScaling) {
             val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
-
             val leftSlideBarPosition = leftSlideBar * columnWidthAndSpacing
             val rightSlideBarPosition = rightSlideBar * columnWidthAndSpacing
 
@@ -462,15 +448,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         getWidthAndSpacing()
 
         histogramBackgroundRectF = RectF(ZERO_SIZE_F, histogramTopPadding, fWidth, fHeight)
-
         halfOfHistogramTopPadding = histogramTopPadding / 2
 
         val heightWithTopPadding = fHeight - histogramTopPadding
 
         histogramHeight = heightWithTopPadding - heightWithTopPadding * columnVerticalPaddingRatio
-
-        histogramYAxis =
-            histogramHeight / 2F + histogramTopPadding + fHeight * columnVerticalPaddingRatio / 2F
+        histogramYAxis = histogramHeight / 2F + histogramTopPadding + fHeight * columnVerticalPaddingRatio / 2F
 
         initColumns()
     }
@@ -478,72 +461,53 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun initColumns() {
         columns.clear()
 
-        val heightMin = histogramHeight / Short.MAX_VALUE.toFloat()
+        val heightMin = histogramHeight / Byte.MAX_VALUE.toFloat()
 
         columnBytes.forEach { short ->
             val halfOfColumnHeight = (heightMin * short.toFloat() - histogramTopPadding) / 2F
 
             columns.add(
                 ColumnSize(
-                    histogramYAxis - halfOfColumnHeight, histogramYAxis + halfOfColumnHeight
+                    histogramYAxis - halfOfColumnHeight,
+                    histogramYAxis + halfOfColumnHeight
                 )
             )
         }
     }
 
     private fun getWidthAndSpacing() {
-        columnWidth =
-            fWidth / (currentVisibleColumnsCount + (currentVisibleColumnsCount - 1) * columnSpacingRatio)
-
+        columnWidth = fWidth / (currentVisibleColumnsCount + (currentVisibleColumnsCount - 1) * columnSpacingRatio)
         columnRadius = columnWidth / 2F
-
         spacingBetweenColumns = columnWidth * columnSpacingRatio
     }
 
-    private fun processAudioFile(filePath: String) {
-        val file = File(filePath)
-        var soundFile: SoundFile? = null
+    private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
+        value?.takeIf { this != it && predicate() }?.let {
+            receiver(it)
+        } ?: Unit
 
-        SongMetadataReader(WeakReference(context), filePath).let {
-            it.title
-            it.artist
-
-            soundFile = SoundFile(filePath, it.title, it.artist, it.album, it.year)
-        }
-
-        val titleLabel = ""
-
-//        if () {
-//
-//        }
-
-
-    }
-
-    private fun <T> T.getIfAndInvalidate(
-        value: T?,
-        predicate: () -> Boolean,
-        receiver: (T) -> Unit
-    ) =
-        value?.takeIf { this != value && predicate() }?.let {
-            receiver(value)
+    private fun <T> T.getIfAndInvalidate(value: T?, predicate: () -> Boolean, receiver: (T) -> Unit) =
+        value?.takeIf { this != it && predicate() }?.let {
+            receiver(it)
             invalidate()
         } ?: Unit
 
-    private fun <T> T.getIfNewAndInvalidate(value: T?, receiver: (T) -> Unit) = value?.let {
-        if (this != value) {
-            receiver(value)
+    private fun <T> T.getIfNewAndInvalidate(value: T?, receiver: (T) -> Unit) =
+        value?.takeIf { this != it }?.let {
+            receiver(it)
             invalidate()
-        }
-    } ?: Unit
+        } ?: Unit
 
-    private data class ColumnSize(var top: Float, var bottom: Float)
-
-    private data class SoundFile(
+    data class SoundData(
         val filePath: String,
         val title: String?,
         val artist: String?,
         val album: String?,
-        val year: Int?
+        val year: Int?,
+        val fileType: String?,
+        val sampleRate: Int?,
+        val averageBitrate: Int?
     )
+
+    private data class ColumnSize(var top: Float, var bottom: Float)
 }

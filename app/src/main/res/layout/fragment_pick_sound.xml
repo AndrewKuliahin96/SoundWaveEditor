@@ -12,7 +12,7 @@
         android:id="@+id/vSoundEditor"
         android:layout_width="match_parent"
         android:layout_height="200dp"
-        android:padding="8dp"
+        android:layout_margin="8dp"
         app:activeColumnsColor="@color/colorRed"
         app:columnSpacingRatio="0.0"
         app:histogramBackground="@color/colorLightGray"
@@ -23,22 +23,34 @@
         android:visibility="gone"/>
 
     <TextView
-        android:id="@+id/tvFrequency"
+        android:id="@+id/tvInfo"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"/>
 
     <TextView
-        android:id="@+id/tvFormat"
+        android:id="@+id/tvFrequency"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"/>
 
     <TextView
         android:id="@+id/tvDuration"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"/>
 
     <TextView
         android:id="@+id/tvBitrate"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"/>
+
+    <Button
+        android:id="@+id/bTrim"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TRIM AUDIO"
+        android:layout_margin="8dp"
+        android:layout_gravity="center"/>
 </LinearLayout>
