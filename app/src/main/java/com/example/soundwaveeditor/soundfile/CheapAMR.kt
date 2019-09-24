@@ -127,32 +127,21 @@ class CheapAMR : CheapSoundFile() {
     }
 
     // Member variables containing frame info
-    private var numFrames: Int = 0
-    private var frameGains: IntArray? = null
-    private var fileSize: Int = 0
-    private var bitRate: Int = 0
+    override var numFrames = 0
+    override var frameGains = intArrayOf()
+    override var samplesPerFrame = 40
+    override var fileSizeBytes = 0
+    override var avgBitrateKbps = 0
+    override var sampleRate = 8000
+    override var channels = 1
+    override var filetype = "AMR"
 
     // Member variables used only while initially parsing the file
+    private var bitRate = 0
     private var offset: Int = 0
     private var maxFrames: Int = 0
     private var minGain: Int = 0
     private var maxGain: Int = 0
-
-    override fun getNumFrames() = numFrames
-
-    override fun getSamplesPerFrame() = 40
-
-    override fun getFrameGains() = frameGains
-
-    override fun getFileSizeBytes() = fileSize
-
-    override fun getAvgBitrateKbps() = bitRate
-
-    override fun getSampleRate() = 8000
-
-    override fun getChannels() = 1
-
-    override fun getFiletype() = "AMR"
 
     @Throws(java.io.FileNotFoundException::class, java.io.IOException::class)
     override fun readFile(file: File) {
@@ -165,9 +154,9 @@ class CheapAMR : CheapSoundFile() {
         bitRate = 10
         offset = 0
 
-        fileSize = inputFile?.length()?.toInt() ?: 0
+        fileSizeBytes = inputFile?.length()?.toInt() ?: 0
 
-        if (fileSize < 128) {
+        if (fileSizeBytes < 128) {
             throw java.io.IOException("File too small to parse")
         }
 
@@ -184,7 +173,7 @@ class CheapAMR : CheapSoundFile() {
             header[4] == 'R'.toByte() &&
             header[5] == '\n'.toByte()
         ) {
-            stream?.let { parseAMR(it, fileSize - 6) }
+            stream?.let { parseAMR(it, fileSizeBytes - 6) }
         }
 
         stream?.read(header, 6, 6)
@@ -204,12 +193,12 @@ class CheapAMR : CheapSoundFile() {
                     (0xff and header.getInt(2) shl 8) or
                     (0xff and header.getInt(3))
 
-            if (boxLen >= 4 && boxLen <= fileSize - 8) {
+            if (boxLen >= 4 && boxLen <= fileSizeBytes - 8) {
                 stream?.skip((boxLen - 12).toLong())
                 offset += boxLen - 12
             }
 
-            stream?.let { parse3gpp(it, fileSize - boxLen) }
+            stream?.let { parse3gpp(it, fileSizeBytes - boxLen) }
         }
     }
 

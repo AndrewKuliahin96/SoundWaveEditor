@@ -42,19 +42,6 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
             })
     }
 
-//    override fun onActivityCreated(savedInstanceState: Bundle?) {
-//        super.onActivityCreated(savedInstanceState)
-//
-//        showAlert("Do u wanna pick sound to process?", "Open audio", true,
-//            R.string.dialog_ok, {
-//                vSoundEditor.setVisibility(true)
-//                drawHistogram()
-//            },
-//            R.string.dialog_cancel, {
-//                Toast.makeText(context, "Cancel", Toast.LENGTH_SHORT).show()
-//            })
-//    }
-
     private fun showAlert(message: CharSequence, dialogTitle: CharSequence?, cancelable: Boolean, positiveRes: Int?,
                           positiveFun: () -> Unit, negativeRes: Int?, negativeFun: () -> Unit) {
         context?.let {

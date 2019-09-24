@@ -27,38 +27,47 @@ open class CheapSoundFile {
                 }
             }
         }
+
+        @Throws(java.io.FileNotFoundException::class, java.io.IOException::class)
+        fun create(fileName: String, progressListener: ProgressListener): CheapSoundFile? {
+            val file = File(fileName)
+
+            if (!file.exists()) {
+                throw java.io.FileNotFoundException(fileName)
+            }
+
+            val name = file.name.toLowerCase(Locale.getDefault())
+            val components = name.split("\\.".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+
+            if (components.size < 2) {
+                return null
+            }
+
+            val factory = extensionMap[components[components.size - 1]] ?: return null
+
+            return factory.create().apply {
+                setProgressListener(progressListener)
+                readFile(file)
+            }
+        }
+
+        interface ProgressListener {
+            fun reportProgress(fractionComplete: Double): Boolean
+        }
     }
 
-    interface ProgressListener {
-        fun reportProgress(fractionComplete: Double): Boolean
-    }
+    open var numFrames = 0
+    open var samplesPerFrame = 0
+    open var frameGains = intArrayOf()
+    open var fileSizeBytes = 0
+    open var avgBitrateKbps = 0
+    open var sampleRate = 0
+    open var channels = 0
+    open var filetype = "Unknown"
 
     interface Factory {
         val supportedExtensions: Array<String>
         fun create(): CheapSoundFile
-    }
-
-    @Throws(java.io.FileNotFoundException::class, java.io.IOException::class)
-    fun create(fileName: String, progressListener: ProgressListener): CheapSoundFile? {
-        val file = File(fileName)
-
-        if (!file.exists()) {
-            throw java.io.FileNotFoundException(fileName)
-        }
-
-        val name = file.name.toLowerCase(Locale.getDefault())
-        val components = name.split("\\.".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-
-        if (components.size < 2) {
-            return null
-        }
-
-        val factory = extensionMap[components[components.size - 1]] ?: return null
-
-        return factory.create().apply {
-            setProgressListener(progressListener)
-            readFile(file)
-        }
     }
 
     fun isFilenameSupported(filename: String): Boolean {
@@ -83,22 +92,6 @@ open class CheapSoundFile {
     open fun setProgressListener(progressListener: ProgressListener) {
         mProgressListener = progressListener
     }
-
-    open fun getNumFrames() = 0
-
-    open fun getSamplesPerFrame() = 0
-
-    open fun getFrameGains(): IntArray? = null
-
-    open fun getFileSizeBytes() = 0
-
-    open fun getAvgBitrateKbps() = 0
-
-    open fun getSampleRate() = 0
-
-    open fun getChannels() = 0
-
-    open fun getFiletype() = "Unknown"
 
     open fun getSeekableFrameOffset(frame: Int) = -1
 

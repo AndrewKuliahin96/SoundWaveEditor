@@ -62,17 +62,18 @@ class CheapAAC : CheapSoundFile() {
     private val saveDataAtoms = intArrayOf(kDINF, kHDLR, kMDHD, kMVHD, kSMHD, kTKHD, kSTSD)
 
     // Member variables containing frame info
-    private var numFrames: Int = 0
-    private var frameLens: IntArray? = null
-    private var frameGains: IntArray? = null
-    private var fileSize: Int = 0
+    override var numFrames: Int = 0
+    private var frameLens = intArrayOf()
+    override var frameGains = intArrayOf()
+    override var fileSizeBytes = 0
     private var atomMap: HashMap<Int, Atom>? = null
 
     // Member variables containing sound file info
-    private var bitrate: Int = 0
-    private var sampleRate: Int = 0
-    private var channels: Int = 0
-    private var samplesPerFrame: Int = 0
+    override var avgBitrateKbps: Int = 0
+    override var sampleRate: Int = 0
+    override var channels: Int = 0
+    override var samplesPerFrame: Int = 0
+    override var filetype = "AAC"
 
     // Member variables used only while initially parsing the file
     private var offset: Int = 0
@@ -80,22 +81,6 @@ class CheapAAC : CheapSoundFile() {
     private var maxGain: Int = 0
     private var dataOffset: Int = 0
     private var dataLength: Int = 0
-
-    override fun getNumFrames() = numFrames
-
-    override fun getSamplesPerFrame() = samplesPerFrame
-
-    override fun getFrameGains() = frameGains
-
-    override fun getFileSizeBytes() = fileSize
-
-    override fun getAvgBitrateKbps() = fileSize / (numFrames * samplesPerFrame)
-
-    override fun getSampleRate() = sampleRate
-
-    override fun getChannels() = channels
-
-    override fun getFiletype() = "AAC"
 
     private fun atomToString(atomType: Int) = StringBuilder().apply {
         append((atomType shr 24 and 0xff).toChar())
@@ -109,7 +94,7 @@ class CheapAAC : CheapSoundFile() {
         super.readFile(file)
         channels = 0
         sampleRate = 0
-        bitrate = 0
+        avgBitrateKbps = 0
         samplesPerFrame = 0
         numFrames = 0
         minGain = 255
@@ -121,9 +106,9 @@ class CheapAAC : CheapSoundFile() {
         atomMap = HashMap()
 
         // No need to handle filesizes larger than can fit in a 32-bit int
-        fileSize = inputFile?.length()?.toInt() ?: 0
+        fileSizeBytes = inputFile?.length()?.toInt() ?: 0
 
-        if (fileSize < 128) {
+        if (fileSizeBytes < 128) {
             throw java.io.IOException("File too small to parse")
         }
 
@@ -141,7 +126,7 @@ class CheapAAC : CheapSoundFile() {
         ) {
             // Create a new stream, reset to the beginning of the file
             stream = inputFile?.let { FileInputStream(it) }
-            stream?.let { parseMp4(it, fileSize) }
+            stream?.let { parseMp4(it, fileSizeBytes) }
         } else {
             throw java.io.IOException("Unknown file format")
         }
@@ -280,10 +265,10 @@ class CheapAAC : CheapSoundFile() {
         offset += length
 
         for (i in 0 until numFrames) {
-            frameLens?.set(i, (0xff and frameLenBytes.getInt(4 * i + 0) shl 24 or
+            frameLens[i] = (0xff and frameLenBytes.getInt(4 * i + 0) shl 24 or
                     (0xff and frameLenBytes.getInt(4 * i + 1) shl 16) or
                     (0xff and frameLenBytes.getInt(4 * i + 2) shl 8) or
-                    (0xff and frameLenBytes.getInt(4 * i + 3))))
+                    (0xff and frameLenBytes.getInt(4 * i + 3)))
         }
     }
 
@@ -299,20 +284,18 @@ class CheapAAC : CheapSoundFile() {
         val initialOffset = offset
 
         for (i in 0 until numFrames) {
-            frameLens?.get(i)?.takeIf { offset - initialOffset + it > maxLen - 8 }?.let {
-                frameGains?.set(i, 0)
+            frameLens[i].takeIf { offset - initialOffset + it > maxLen - 8 }?.let {
+                frameGains[i] = 0
             } ?: readFrameAndComputeGain(stream, i)
 
-            frameGains?.let {
-                when {
-                    it[i] < minGain -> minGain = it[i]
-                    it[i] > maxGain -> maxGain = it[i]
-                }
+            when {
+                frameGains[i] < minGain -> minGain = frameGains[i]
+                frameGains[i] > maxGain -> maxGain = frameGains[i]
             }
 
             if (mProgressListener != null) {
                 val keepGoing = mProgressListener?.reportProgress(
-                    offset * 1.0 / fileSize
+                    offset * 1.0 / fileSizeBytes
                 ) ?: false
 
                 if (!keepGoing) break
@@ -322,8 +305,8 @@ class CheapAAC : CheapSoundFile() {
 
     @Throws(java.io.IOException::class)
     internal fun readFrameAndComputeGain(stream: InputStream, frameIndex: Int) {
-        frameGains?.get(frameIndex)?.takeIf { it < 4 }?.let {
-            frameGains?.run {
+        frameGains[frameIndex].takeIf { it < 4 }?.let {
+            frameGains.run {
                 set(frameIndex, 0)
                 stream.skip(get(frameIndex).toLong())
             }
@@ -343,7 +326,7 @@ class CheapAAC : CheapSoundFile() {
                 val monoGain =
                     0x01 and data.getInt(0) shl 7 or (0xfe and data.getInt(1) shr 1)
 
-                frameGains?.set(frameIndex, monoGain)
+                frameGains.set(frameIndex, monoGain)
             }
             // ID_CPE: stereo
             1 -> {
@@ -412,22 +395,18 @@ class CheapAAC : CheapSoundFile() {
                     firstChannelGain += add
                 }
 
-                frameGains?.set(frameIndex, firstChannelGain)
+                frameGains[frameIndex] = firstChannelGain
             }
 
-            else -> frameGains?.run {
-                set(frameIndex, when (frameIndex > 0) {
-                    true -> get(frameIndex - 1)
-                    false -> 0
-                })
+            else -> frameGains[frameIndex] = when (frameIndex > 0) {
+                true -> frameGains[frameIndex - 1]
+                false -> 0
             }
         }
 
-        frameLens?.get(frameIndex)?.let {
-            val skip = it - (offset - initialOffset)
+        val skip = frameLens[frameIndex] - (offset - initialOffset)
 
-            stream.skip(skip.toLong())
-            offset += skip
-        }
+        stream.skip(skip.toLong())
+        offset += skip
     }
 }

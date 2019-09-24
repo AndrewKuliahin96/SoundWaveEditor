@@ -531,16 +531,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         loadingKeepGoing = true
 
-        soundFile = CheapSoundFile.create(path) { fractionComplete ->
-            val now = System.currentTimeMillis()
-            if (now - loadingLastUpdateTime > 100) {
-                loadingProgress = (100 * fractionComplete).toInt()
+        soundFile = CheapSoundFile.create(path, object : CheapSoundFile.Companion.ProgressListener {
+            override fun reportProgress(fractionComplete: Double): Boolean {
+                val now = System.currentTimeMillis()
+                if (now - loadingLastUpdateTime > 100) {
+                    loadingProgress = (100 * fractionComplete).toInt()
 
-                loadingLastUpdateTime = now
+                    loadingLastUpdateTime = now
+                }
+
+                return loadingKeepGoing
             }
-
-            loadingKeepGoing
-        }
+        })
 
 
         val h = mutableListOf<UByte>()
@@ -583,16 +585,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             val gainHist = IntArray(256)
 
             for (j in 0 until numFramesSF) {
-                file.frameGains?.let {
-                    (getGain(j, numFramesSF, it)).toInt()
-                }?.let {
-                    val smoothGain = if (it < 0) 0 else if (it > 255) 255 else it
+                val gain = getGain(j, numFramesSF, file.frameGains).toInt()
+                val smoothGain = if (gain < 0) 0 else if (gain > 255) 255 else gain
 
-                    if (smoothGain > maxGain)
-                        maxGain = smoothGain.toFloat()
+                if (smoothGain > maxGain)
+                    maxGain = smoothGain.toFloat()
 
-                    gainHist[smoothGain]++
-                }
+                gainHist[smoothGain]++
             }
 
             var sum = 0

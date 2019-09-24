@@ -19,34 +19,20 @@ class CheapMP3 : CheapSoundFile() {
         }
     }
 
-    private var numFrames = 0
-    private var frameGains: IntArray? = null
-    private var fileSize = 0
-    private var avgBitRate = 0
-    private var globalSampleRate = 0
-    private var globalChannels = 0
+    override var numFrames = 0
+    override var frameGains = intArrayOf()
+    override var fileSizeBytes = 0
+    override var samplesPerFrame = 1152
+    override var avgBitrateKbps = 0
+    override var sampleRate = 0
+    override var channels = 0
+    override var filetype = "MP3"
 
     // Member variables used during initialization
     private var maxFrames = 0
     private var bitrateSum = 0
     private var minGain = 0
     private var maxGain = 0
-
-    override fun getNumFrames() = numFrames
-
-    override fun getSamplesPerFrame() = 1152
-
-    override fun getFrameGains() = frameGains
-
-    override fun getFileSizeBytes() = fileSize
-
-    override fun getAvgBitrateKbps() = avgBitRate
-
-    override fun getSampleRate() = globalSampleRate
-
-    override fun getChannels() = globalChannels
-
-    override fun getFiletype() = "MP3"
 
     @Throws(java.io.FileNotFoundException::class, java.io.IOException::class)
     override fun readFile(file: File) {
@@ -59,7 +45,7 @@ class CheapMP3 : CheapSoundFile() {
         maxGain = 0
 
         // No need to handle filesizes larger than can fit in a 32-bit int
-        fileSize = file.length().toInt()
+        fileSizeBytes = file.length().toInt()
 
         val stream = FileInputStream(file)
 
@@ -67,7 +53,7 @@ class CheapMP3 : CheapSoundFile() {
         var offset = 0
         val buffer = ByteArray(12)
 
-        while (pos < fileSize - 12) {
+        while (pos < fileSizeBytes - 12) {
             // Read 12 bytes at a time and look for a sync code (0xFF)
             while (offset < 12) {
                 offset += stream.read(buffer, offset, 12 - offset)
@@ -79,7 +65,7 @@ class CheapMP3 : CheapSoundFile() {
                 bufferOffset++
 
             if (mProgressListener != null) {
-                if (mProgressListener?.reportProgress(pos * 1.0 / fileSize) != true) {
+                if (mProgressListener?.reportProgress(pos * 1.0 / fileSizeBytes) != true) {
                     break
                 }
             }
@@ -134,14 +120,14 @@ class CheapMP3 : CheapSoundFile() {
             }
 
             // From here on we assume the frame is good
-            globalSampleRate = sampleRate
+            this.sampleRate = sampleRate
             val padding = buffer.getInt(2) and 2 shr 1
             val frameLen = 144 * bitRate * 1000 / sampleRate + padding
 
             val gain: Int
             if (buffer.getInt(3) and 0xC0 == 0xC0) {
                 // 1 channel
-                globalChannels = 1
+                channels = 1
                 gain = if (mpgVersion == 1) {
                     (buffer.getInt(10) and 0x01 shl 7) + (buffer.getInt(11) and 0xFE shr 1)
                 } else {
@@ -149,7 +135,7 @@ class CheapMP3 : CheapSoundFile() {
                 }
             } else {
                 // 2 channels
-                globalChannels = 2
+                channels = 2
                 gain = if (mpgVersion == 1) {
                     (buffer.getInt(9) and 0x7F shl 1) + (buffer.getInt(10) and 0x80 shr 7)
                 } else {
@@ -158,7 +144,7 @@ class CheapMP3 : CheapSoundFile() {
             }
 
             bitrateSum += bitRate
-            frameGains?.set(numFrames, gain)
+            frameGains[numFrames] = gain
 
             if (gain < minGain)
                 minGain = gain
@@ -174,18 +160,20 @@ class CheapMP3 : CheapSoundFile() {
                 // resize is ever needed, however to avoid pathological
                 // cases we make sure to always double the size at a minimum.
 
-                avgBitRate = bitrateSum / numFrames
+                avgBitrateKbps = bitrateSum / numFrames
 
-                val totalFramesGuess = fileSize / avgBitRate * sampleRate / 144000
+                val totalFramesGuess = fileSizeBytes / avgBitrateKbps * sampleRate / 144000
                 var newMaxFrames = totalFramesGuess * 11 / 10
 
                 if (newMaxFrames < maxFrames * 2)
                     newMaxFrames = maxFrames * 2
 
                 val newGains = IntArray(newMaxFrames)
+
                 for (i in 0 until numFrames) {
-                    frameGains?.get(i)?.let { newGains[i] = it }
+                    newGains[i] = frameGains[i]
                 }
+
                 frameGains = newGains
                 maxFrames = newMaxFrames
             }
@@ -196,9 +184,6 @@ class CheapMP3 : CheapSoundFile() {
         }
 
         // We're done reading the file, do some postprocessing
-        avgBitRate = if (numFrames > 0)
-            bitrateSum / numFrames
-        else
-            0
+        avgBitrateKbps = if (numFrames > 0) bitrateSum / numFrames else 0
     }
 }
