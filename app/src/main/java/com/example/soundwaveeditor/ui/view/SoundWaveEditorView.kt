@@ -4,11 +4,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
+import android.util.Log
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
+import com.example.soundwaveeditor.soundfile.CheapSoundFile
+import java.io.File
+import kotlin.math.min
 
 
 @ExperimentalUnsignedTypes
@@ -198,7 +202,21 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             value in (minTrimLengthInSeconds + 1) until soundDuration
         }) { field = it }
 
-    var columnBytes = mutableListOf<Byte>()
+    var columnBytes = mutableListOf<UByte>()
+        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+
+    var fileName: String? = null
+        set(value) = field.getIfNew(value) {
+            it?.let { file -> processAudioFile(file) }
+            field = it
+        }
+
+    var soundFile: CheapSoundFile? = null
+        set(value) = field.getIfNew(value) {
+            field = it
+        }
+
+    var currentPlayTimeMs = 0
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     init {
@@ -301,6 +319,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
+        val playingPosition = getPlayingPosition()
+
+        Log.e("POS", "$playingPosition")
+
         columns.takeIf { it.size >= lastVisibleItem }
             ?.subList(firstVisibleColumn, lastVisibleItem)
             ?.forEachIndexed { index, column ->
@@ -309,7 +331,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 when (index) {
                     in leftSlideBar + 1 until rightSlideBar -> activeColumnsPaint
                     leftSlideBar, rightSlideBar -> slideBarPaint.apply { isSlideBar = true }
-                    else -> inactiveColumnsPaint
+                    else -> {
+                        if (index + firstVisibleColumn == playingPosition) {
+                            slideBarPaint.apply { isSlideBar = true }
+                        } else {
+                            inactiveColumnsPaint
+                        }
+                    }
                 }.let { paint ->
                     val leftColumnSide = index * (columnWidth + spacingBetweenColumns)
 
@@ -405,6 +433,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         return true
     }
 
+    // TODO playing position
+    private fun getPlayingPosition(): Int {
+
+        return columnBytes.size / (soundDuration / (currentPlayTimeMs.takeIf { it != 0 }?.let { it } ?: 1).toInt())
+    }
+
+    // TODO remove later
+    var loadedCallback: ((Boolean) -> Unit)? = null
+
     private fun getTimeAndPosition(position: Int, result: (String, Float, Float) -> Unit) {
         columnBytes.takeIf { it.isNotEmpty() }?.let {
             val timeText = getTimeText(position + firstVisibleColumn)
@@ -461,7 +498,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun initColumns() {
         columns.clear()
 
-        val heightMin = histogramHeight / Byte.MAX_VALUE.toFloat()
+        val heightMin = histogramHeight / UByte.MAX_VALUE.toFloat()
 
         columnBytes.forEach { short ->
             val halfOfColumnHeight = (heightMin * short.toFloat() - histogramTopPadding) / 2F
@@ -479,6 +516,124 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         columnWidth = fWidth / (currentVisibleColumnsCount + (currentVisibleColumnsCount - 1) * columnSpacingRatio)
         columnRadius = columnWidth / 2F
         spacingBetweenColumns = columnWidth * columnSpacingRatio
+    }
+
+    // TODO To vals
+    var loadingKeepGoing = false
+    var loadingProgress = 0
+
+    var numFramesSF = 0
+
+    private fun processAudioFile(fileName: String) {
+        val path = File(fileName).absolutePath
+
+        var loadingLastUpdateTime = System.currentTimeMillis()
+
+        loadingKeepGoing = true
+
+        soundFile = CheapSoundFile.create(path) { fractionComplete ->
+            val now = System.currentTimeMillis()
+            if (now - loadingLastUpdateTime > 100) {
+                loadingProgress = (100 * fractionComplete).toInt()
+
+                loadingLastUpdateTime = now
+            }
+
+            loadingKeepGoing
+        }
+
+
+        val h = mutableListOf<UByte>()
+
+        soundFile?.run {
+            (numFrames * samplesPerFrame / sampleRate).let {
+                soundDuration = it * 1_000
+            }
+
+            val t3 = System.currentTimeMillis()
+
+            numFramesSF = numFrames
+
+            getMinMax()?.let {
+                for (i in 0..numFrames) {
+                    h.add((calculateHeight(i, it.first, it.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
+                }
+
+                // TODO avg of 10 frames will be drawn on view
+                columnBytes = h.chunked(10).map { list -> list.map { mapped -> mapped.toInt() }.average() }.map { it.toUInt().toUByte() }.toMutableList()
+
+                // TODO every frame will be drawn on view
+//                columnBytes = h
+
+                currentVisibleColumnsCount = columnBytes.size
+
+                val t4 = System.currentTimeMillis()
+
+                Log.e("ELAPSED", "${t4 - t3} ms for gettin column bytes, size: ${columnBytes.size}")
+            }
+
+            loadedCallback?.invoke(true)
+        }
+    }
+
+    private fun getMinMax(): Pair<Float, Float>? {
+        soundFile?.let { file ->
+            var minGain = 0F
+            var maxGain = 0F
+            val gainHist = IntArray(256)
+
+            for (j in 0 until numFramesSF) {
+                file.frameGains?.let {
+                    (getGain(j, numFramesSF, it)).toInt()
+                }?.let {
+                    val smoothGain = if (it < 0) 0 else if (it > 255) 255 else it
+
+                    if (smoothGain > maxGain)
+                        maxGain = smoothGain.toFloat()
+
+                    gainHist[smoothGain]++
+                }
+            }
+
+            var sum = 0
+
+            while (minGain < 255 && sum < numFramesSF / 20) {
+                sum += gainHist[minGain.toInt()]
+                minGain++
+            }
+
+            return minGain to maxGain
+        } ?: return null
+    }
+
+    private fun calculateHeight(i: Int, minGain: Float, maxGain: Float): Float {
+        soundFile?.let { file ->
+            return getHeight(i, numFramesSF, file.frameGains, minGain, maxGain - minGain)
+        } ?: return 0F
+    }
+
+    private fun getHeight(i: Int, numFrames: Int, frameGains: IntArray, minGain: Float, range: Float): Float {
+        val value = (getGain(i, numFrames, frameGains) - minGain) / range
+
+        return when {
+            value < 0.0 -> 0F
+            value > 1.0 -> 1f
+            else -> value
+        }
+    }
+
+    private fun getGain(i: Int, numFrames: Int, frameGains: IntArray): Float {
+        val x = min(i, numFrames - 1)
+
+        return if (numFrames < 2) {
+            frameGains[x].toFloat()
+        } else {
+            when (x) {
+                0 -> frameGains[0] / 2.0f + frameGains[1] / 2.0f
+                numFrames - 1 -> frameGains[numFrames - 2] / 2.0f + frameGains[numFrames - 1] / 2.0f
+                else -> frameGains[x - 1] / 3.0f + frameGains[x] / 3.0f + frameGains[x + 1] / 3.0f
+            }
+        }
     }
 
     private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
