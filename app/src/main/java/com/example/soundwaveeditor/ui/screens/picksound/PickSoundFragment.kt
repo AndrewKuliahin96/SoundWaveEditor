@@ -14,7 +14,13 @@ import com.example.soundwaveeditor.ui.screens.base.BaseFragment
 import kotlinx.android.synthetic.main.fragment_pick_sound.*
 import android.os.Handler
 import android.util.Log
+import com.example.soundwaveeditor.ui.view.SoundWaveEditorView
+import io.reactivex.BackpressureStrategy
+import io.reactivex.Flowable
+import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.schedulers.Schedulers
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 
 @Suppress("SameParameterValue")
@@ -60,17 +66,12 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
 
 
     private var player: MediaPlayer? = null
-    private val handler = Handler()
-    private var timer = 0
 
     @SuppressLint("SetTextI18n")
     private fun drawHistogram() {
         vSoundEditor.apply {
-
             val path = "/sdcard/Music/A\$AP Rocky x Moby x T.I. x Kid Cudi - A\$AP Forever REMIX [Рифмы и Панчи].mp3"
-
-            // TODO remove later: this thing not needed, cause we will get bytes from audio soundfile
-//            columnBytes = getShorts(1_900).toMutableList()
+//            val path = "/sdcard/Music/\$ki Mask The \$lump God - Gone (Interlude).mp3"
 
             // Optional, but good practice as minVis... and current...
             maxVisibleColumnsCount = 1_800
@@ -84,33 +85,53 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
             leftSlideBar = 50
 
             loadedCallback = {
-                // TODO play music here
+                soundData?.let { sd ->
+                    sd.averageBitrate?.let { tvBitrate.text = "Average bitrate: $it kbps" }
+                    sd.sampleRate?.let { tvFrequency.text = "Sample rate: $it Hz"  }
 
-                Log.e("CALLBACK", "ok")
+                    soundDuration.takeIf { it > 0L }?.let {
+                        val minutes = it / 1_000 / 60
+                        val seconds = it / 1_000 % 60
+
+                        tvDuration.text = "Duration: $minutes:$seconds"
+                    }
+
+                    tvInfo.text = "${sd.artist ?: "Unknown artist"} - " +
+                            "${sd.title ?: "No track name"} (${sd.album ?: "Unknown album"}, " +
+                            "${sd.year ?: "No year info"}) ${sd.fileType ?: "Unknown file type"}"
+                }
 
                 player = MediaPlayer()
                 player?.setAudioStreamType(AudioManager.STREAM_MUSIC)
                 player?.setDataSource(context, Uri.parse(File(path).absolutePath))
+
+                player?.setOnCompletionListener {
+                    Log.e("COMPLETED", "ok")
+                }
 
                 player?.setOnPreparedListener {
                     player?.start()
 
                     Log.e("PREPARED", "ok")
 
-                    object : Runnable {
-                        override fun run() {
+                    updatePeriod?.let {
+                        Flowable
+                            .interval(it, TimeUnit.MILLISECONDS)
+                            .takeWhile { player?.isPlaying ?: false }
+                            .timeInterval()
+                            .onBackpressureLatest()
+                            .subscribeOn(Schedulers.computation())
+                            .observeOn(AndroidSchedulers.mainThread())
+                            .subscribe({ t ->
+                                updatingCallback(t.time())
 
-                            // TODO rem this sh*it
-                            synchronized(this) {
-                                timer += 10
-                            }
-
-//                            currentPlayTimeMs = player?.currentPosition ?: 0
-                            currentPlayTimeMs = timer
-
-                            handler.postDelayed(this, 10)
-                        }
-                    }.run()
+                                Log.e("FLOW", "new emission")
+                            }, { e ->
+                                Log.e("ERROR", "${e.message}")
+                            }, {
+                                Log.e("COMPLETE", "ok")
+                            })
+                    }
                 }
 
                 player?.prepareAsync()

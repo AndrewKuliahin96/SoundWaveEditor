@@ -11,7 +11,9 @@ import android.view.View
 import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
 import com.example.soundwaveeditor.soundfile.CheapSoundFile
+import com.example.soundwaveeditor.soundfile.SongMetadataReader
 import java.io.File
+import java.lang.ref.WeakReference
 import kotlin.math.min
 
 
@@ -42,6 +44,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     private var scaleDetector: ScaleGestureDetector
+    // TODO impl fling
+//    private var gestureDetector: SimpleGestureDetector
 
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
@@ -63,24 +67,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var movin = NO_MOVE
     private var isScaling = false
 
-    private var histogramBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private var histogramBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
-    private var inactiveColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private var inactiveColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
-    private var activeColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private var activeColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
-    private var slideBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private var slideBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
-    private var timeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
+    private var timeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill().apply {
         textSize = DEFAULT_TIME_TEXT_SIZE
     }
 
@@ -212,14 +207,46 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
 
     var soundFile: CheapSoundFile? = null
+        set(value) = field.getIfNew(value) { field = it }
+
+    var soundData: SoundData? = null
+        set(value) = field.getIfNew(value) { field = it }
+
+    var currentPlayTimeMs = 0L
         set(value) = field.getIfNew(value) {
             field = it
+
+
+            // TODO there is weak place
+            // TODO calculate in flowable, b-cause division took too much time
+
+//            playingPosition = calculatePlayingPosition()
+            playingPosition += 1
         }
 
-    var currentPlayTimeMs = 0
-        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+    private var playingPosition = ZERO_SIZE
+        set(value) {
+            field = value
+            invalidate()
+        }
+//        set(value) = field.getIfNewAndInvalidate(value) {
+//            Log.e("POSITION", "new position")
+//            field = it
+//        }
+
+    val updatingCallback = { time: Long ->
+        Log.e("CALLBACK", "new time")
+        currentPlayTimeMs += time
+    }
 
     init {
+        // TODO test HA performance and if it low -> remove this 4 fuckin lines below
+        // TODO also remove @android:hardwareAccelerated="true" in manifest
+//        setLayerType(LAYER_TYPE_HARDWARE, slideBarPaint)
+//        setLayerType(LAYER_TYPE_HARDWARE, activeColumnsPaint)
+//        setLayerType(LAYER_TYPE_HARDWARE, inactiveColumnsPaint)
+//        setLayerType(LAYER_TYPE_HARDWARE, timeTextPaint)
+
         context.theme.obtainStyledAttributes(attrs, R.styleable.SoundWaveEditorView, 0, 0).apply {
             timeTextSize = getDimension(
                 R.styleable.SoundWaveEditorView_timeTextSize,
@@ -294,8 +321,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 )
         }.recycle()
 
-        setLayerType(LAYER_TYPE_HARDWARE, null)
-
         histogramBackgroundPaint.color = histogramBackgroundColor
         activeColumnsPaint.color = activeColumnsColor
         inactiveColumnsPaint.color = inactiveColumnsColor
@@ -307,6 +332,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
 
         scaleDetector = ScaleGestureDetector(context, this)
+
+        // TODO impl fling gesture
+//        gestureDetector = SimpleGestureDetector()
     }
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
@@ -315,17 +343,19 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     override fun onDraw(canvas: Canvas) = canvas.run {
+        // TODO REMOVE LATER
+        val t = System.currentTimeMillis()
+
         drawRect(histogramBackgroundRectF, histogramBackgroundPaint)
 
         val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
-        val playingPosition = getPlayingPosition()
-
-        Log.e("POS", "$playingPosition")
-
         columns.takeIf { it.size >= lastVisibleItem }
             ?.subList(firstVisibleColumn, lastVisibleItem)
             ?.forEachIndexed { index, column ->
+
+                val t1 = System.nanoTime()
+
                 var isSlideBar = false
 
                 when (index) {
@@ -338,6 +368,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                             inactiveColumnsPaint
                         }
                     }
+//                    else -> inactiveColumnsPaint
                 }.let { paint ->
                     val leftColumnSide = index * (columnWidth + spacingBetweenColumns)
 
@@ -357,6 +388,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         getTimeAndPosition(leftSlideBar) { text, x, y -> drawText(text, x, y, timeTextPaint) }
         getTimeAndPosition(rightSlideBar) { text, x, y -> drawText(text, x, y, timeTextPaint) }
+
+        // TODO REMOVE LATER
+        Log.e("ELAPSED TIME", "${System.currentTimeMillis() - t}")
+        Unit
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -433,10 +468,16 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         return true
     }
 
-    // TODO playing position
-    private fun getPlayingPosition(): Int {
+    // TODO works too slowly, REMOVE
+    private fun calculatePlayingPosition(): Int {
 
-        return columnBytes.size / (soundDuration / (currentPlayTimeMs.takeIf { it != 0 }?.let { it } ?: 1).toInt())
+        val divTime = System.nanoTime()
+
+        val div = columnBytes.size.divideBy(soundDuration.divideBy(currentPlayTimeMs)).toInt()
+
+        Log.e("DIV TIME", "${(System.nanoTime() - divTime)} ns")
+
+        return div
     }
 
     // TODO remove later
@@ -567,6 +608,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 // TODO every frame will be drawn on view
 //                columnBytes = h
 
+//                currentVisibleColumnsCount = 400
                 currentVisibleColumnsCount = columnBytes.size
 
                 val t4 = System.currentTimeMillis()
@@ -574,9 +616,22 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 Log.e("ELAPSED", "${t4 - t3} ms for gettin column bytes, size: ${columnBytes.size}")
             }
 
+            SongMetadataReader(WeakReference(context), path).run {
+                soundData = SoundData(
+                    path, title, artist, album, year, filetype, sampleRate, avgBitrateKbps
+                )
+            }
+
+            updatePeriod = getUpdatePeriod()
+
             loadedCallback?.invoke(true)
         }
     }
+
+    var updatePeriod: Long? = 0L
+
+    private fun getUpdatePeriod() =
+        (soundDuration / (columnBytes.size.takeIf { it != ZERO_SIZE } ?: 1)).toLong()
 
     private fun getMinMax(): Pair<Float, Float>? {
         soundFile?.let { file ->
@@ -635,6 +690,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
+    private fun Paint.styleFill() = apply { style = Paint.Style.FILL }
+
+    private fun <T : Number> T?.divideBy(other: T?) =
+        this?.takeIf { it != 0L }
+            ?.let { it.toLong().div(other?.takeIf { o -> o != 0L }?.toLong() ?: 1L) } ?: 1L
+
     private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
         value?.takeIf { this != it && predicate() }?.let {
             receiver(it)
@@ -654,13 +715,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     data class SoundData(
         val filePath: String,
-        val title: String?,
-        val artist: String?,
-        val album: String?,
-        val year: Int?,
-        val fileType: String?,
-        val sampleRate: Int?,
-        val averageBitrate: Int?
+        val title: String? = null,
+        val artist: String? = null,
+        val album: String? = null,
+        val year: Int? = null,
+        val fileType: String? = null,
+        val sampleRate: Int? = null,
+        val averageBitrate: Int? = null
     )
 
     private data class ColumnSize(var top: Float, var bottom: Float)
