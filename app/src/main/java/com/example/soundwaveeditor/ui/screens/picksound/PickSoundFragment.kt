@@ -12,10 +12,7 @@ import com.example.soundwaveeditor.R
 import com.example.soundwaveeditor.extensions.setVisibility
 import com.example.soundwaveeditor.ui.screens.base.BaseFragment
 import kotlinx.android.synthetic.main.fragment_pick_sound.*
-import android.os.Handler
 import android.util.Log
-import com.example.soundwaveeditor.ui.view.SoundWaveEditorView
-import io.reactivex.BackpressureStrategy
 import io.reactivex.Flowable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
@@ -70,12 +67,29 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
     @SuppressLint("SetTextI18n")
     private fun drawHistogram() {
         vSoundEditor.apply {
+
+            // TODO fix file formats
+            // Testing for audio formats cases
+//            val path = "/storage/sdcard1/Test/example.aac"      // Static height of columns (static soundwave)
+//            val path = "/storage/sdcard1/Test/example.amr"      // Too slow opening, no columns
+//            val path = "/storage/sdcard1/Test/example.m4a"      // Static height of columns (static soundwave)
+//            val path = "/storage/sdcard1/Test/example.mp3"      // OK
+//            val path = "/storage/sdcard1/Test/example.wav"      // No columns
+//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // Slow opening or App is Not Responding
+
+            // TODO need to optimize WAVE files opening (now time === 2 sec in best case)
+            // TODO also did it non-blocking to avoid ANR state
+
+            // Testing for duration cases
+            // lb more than 5 min
             val path = "/sdcard/Music/A\$AP Rocky x Moby x T.I. x Kid Cudi - A\$AP Forever REMIX [Рифмы и Панчи].mp3"
+
+            // lb more than 1 min
 //            val path = "/sdcard/Music/\$ki Mask The \$lump God - Gone (Interlude).mp3"
 
             // Optional, but good practice as minVis... and current...
             maxVisibleColumnsCount = 1_800
-            currentVisibleColumnsCount = 700
+//            currentVisibleColumnsCount = 700
 
             // OK
             firstVisibleColumn = 0
@@ -124,8 +138,6 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                             .observeOn(AndroidSchedulers.mainThread())
                             .subscribe({ t ->
                                 updatingCallback(t.time())
-
-                                Log.e("FLOW", "new emission")
                             }, { e ->
                                 Log.e("ERROR", "${e.message}")
                             }, {

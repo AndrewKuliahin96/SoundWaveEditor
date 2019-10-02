@@ -44,7 +44,7 @@ class CheapWAV : CheapSoundFile() {
 
             var gain: Int
             var value: Int
-            val buffer = IntArray(samplesPerFrame)
+            val buffer = IntArray(samplesPerFrame * channels)
 
             for (i in 0 until numFrames) {
                 gain = -1

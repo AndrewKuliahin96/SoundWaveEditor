@@ -1,10 +1,13 @@
 package com.example.soundwaveeditor.ui.view
 
+import android.animation.Animator
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
 import android.util.Log
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -14,7 +17,9 @@ import com.example.soundwaveeditor.soundfile.CheapSoundFile
 import com.example.soundwaveeditor.soundfile.SongMetadataReader
 import java.io.File
 import java.lang.ref.WeakReference
+import kotlin.math.absoluteValue
 import kotlin.math.min
+import kotlin.math.pow
 
 
 @ExperimentalUnsignedTypes
@@ -30,11 +35,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_COLUMNS_RATIO = 1F
         private const val ZERO_SIZE_F = 0F
         private const val ZERO_SIZE = 0
+        private const val ZERO_SIZE_L = 0L
         private const val DEFAULT_MAX_TRIM_LENGTH_IN_SEC = 10
         private const val DEFAULT_MIN_TRIM_LENGTH_IN_SEC = 0
         private const val DEFAULT_SLIDE_BARS_PADDING = 10
         private const val DEFAULT_MAX_COLUMNS_COUNT = 500
-        private const val DEFAULT_MIN_COLUMNS_COUNT = 200
+        private const val DEFAULT_MIN_COLUMNS_COUNT = 100
         private const val DEFAULT_COLUMNS_COUNT = 300
         private const val NO_MOVE = -1
         private const val MOVE_SLIDE = 2
@@ -44,8 +50,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     private var scaleDetector: ScaleGestureDetector
-    // TODO impl fling
-//    private var gestureDetector: SimpleGestureDetector
+    private var gestureDetector: GestureDetector
 
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
@@ -142,8 +147,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             field = it
         })
 
-    var soundDuration = ZERO_SIZE
-        set(value) = field.getIfAndInvalidate(value, { value > 0 }, { field = it })
+    var soundDuration = ZERO_SIZE_L
+        set(value) = field.getIfAndInvalidate(value, { value > 0L }, { field = it })
 
     var needToRoundColumns = false
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
@@ -164,17 +169,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var firstVisibleColumn = ZERO_SIZE
         set(value) = field.getIfAndInvalidate(value, {
             value in 0..columnBytes.size - currentVisibleColumnsCount
-        }) {
-            field = it
-        }
+        }) { field = it }
 
     // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
     var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
             value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - distanceBetweenSlideBarsInColumns
-        }) {
-            field = it
-        }
+        }) { field = it }
 
     // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
     var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
@@ -215,27 +216,53 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var currentPlayTimeMs = 0L
         set(value) = field.getIfNew(value) {
             field = it
-
-
-            // TODO there is weak place
-            // TODO calculate in flowable, b-cause division took too much time
-
-//            playingPosition = calculatePlayingPosition()
             playingPosition += 1
         }
+
+    // TODO add other states
+    val STATE_PLAYING = 1
+    val playerState = STATE_PLAYING
 
     private var playingPosition = ZERO_SIZE
         set(value) {
             field = value
+
+            // TODO refactor
+//            val middle = firstVisibleColumn + (currentVisibleColumnsCount / 2)
+//
+//            if (field != middle && (anim?.isRunning?.not()) != false) {
+//                when (field > middle) {
+//                    true -> animateToPlayPosition(firstVisibleColumn, field - middle, 10L)
+//                    false -> animateToPlayPosition(
+//                        firstVisibleColumn,
+//                        firstVisibleColumn - middle - field,
+//                        10L
+//                    )
+//                }
+//            }
+
             invalidate()
         }
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            Log.e("POSITION", "new position")
-//            field = it
-//        }
+
+    var anim: ValueAnimator? = null
+
+    private fun animateToPlayPosition(start: Int, end: Int, animationDuration: Long) {
+        // TODO replace to properties, b-cause animator object will creating all the time
+        anim = ValueAnimator.ofInt(start, end).apply {
+            duration = animationDuration
+
+            addUpdateListener {
+                it.animatedValue.takeIf { value -> value is Int }?.let { value ->
+                    firstVisibleColumn = value as Int
+                }
+            }
+
+            start()
+        }
+    }
 
     val updatingCallback = { time: Long ->
-        Log.e("CALLBACK", "new time")
+        // TODO replace by 100L
         currentPlayTimeMs += time
     }
 
@@ -249,8 +276,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         context.theme.obtainStyledAttributes(attrs, R.styleable.SoundWaveEditorView, 0, 0).apply {
             timeTextSize = getDimension(
-                R.styleable.SoundWaveEditorView_timeTextSize,
-                DEFAULT_TIME_TEXT_SIZE
+                R.styleable.SoundWaveEditorView_timeTextSize, DEFAULT_TIME_TEXT_SIZE
             )
 
             timeTextColor = getColor(
@@ -334,7 +360,62 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         scaleDetector = ScaleGestureDetector(context, this)
 
         // TODO impl fling gesture
-//        gestureDetector = SimpleGestureDetector()
+        gestureDetector = GestureDetector(
+            context, object : GestureDetector.SimpleOnGestureListener() {
+                override fun onFling(
+                    e1: MotionEvent?,
+                    e2: MotionEvent?,
+                    velocityX: Float,
+                    velocityY: Float
+                ): Boolean {
+                    return doOnFling(e1, e2, velocityX, velocityY)
+
+//                    return super.onFling(e1, e2, velocityX, velocityY)
+                }
+            }
+        )
+    }
+
+    // TODO refactor
+    private var animator: ValueAnimator? = null
+
+    // TODO optimize onFling meth model
+    private fun doOnFling(
+        e1: MotionEvent?,
+        e2: MotionEvent?,
+        velocityX: Float,
+        velocityY: Float
+    ): Boolean {
+//        animator?.cancel()
+//        animator = null
+//
+//        val absVelocity = velocityX.absoluteValue
+//
+//        Log.e("ON_FLING", "velocityX: $velocityX, $currentVisibleColumnsCount, $columnWidth")
+//
+//        if (movin == MOVE_SLIDE && absVelocity > 0F && animator?.isRunning != true) {
+//
+//            val flingColumns = (absVelocity / currentVisibleColumnsCount * 10).toInt()
+//
+//            animator = ValueAnimator().apply {
+//
+//                setIntValues(firstVisibleColumn, firstVisibleColumn - (velocityX / 100F).toInt())
+//
+//                duration = 1_000L
+//
+//                addUpdateListener { animator ->
+//                    animator.animatedValue.takeIf { it is Int }?.let { value ->
+//                        firstVisibleColumn = value as Int
+//
+//                        Log.e("WOW FLING!", "velo - $velocityX; value - ${animator.animatedValue}; duration - $duration ms")
+//                    }
+//                }
+//
+//                start()
+//            }
+//        }
+
+        return true
     }
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
@@ -343,19 +424,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     override fun onDraw(canvas: Canvas) = canvas.run {
-        // TODO REMOVE LATER
-        val t = System.currentTimeMillis()
-
         drawRect(histogramBackgroundRectF, histogramBackgroundPaint)
 
         val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
+        // TODO to create a value animator for play position escorting
+//        if (playingPosition == firstVisibleColumn + currentVisibleColumnsCount / 2) {
+//            firstVisibleColumn++
+//        }
+
         columns.takeIf { it.size >= lastVisibleItem }
             ?.subList(firstVisibleColumn, lastVisibleItem)
             ?.forEachIndexed { index, column ->
-
-                val t1 = System.nanoTime()
-
                 var isSlideBar = false
 
                 when (index) {
@@ -368,7 +448,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                             inactiveColumnsPaint
                         }
                     }
-//                    else -> inactiveColumnsPaint
                 }.let { paint ->
                     val leftColumnSide = index * (columnWidth + spacingBetweenColumns)
 
@@ -388,15 +467,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         getTimeAndPosition(leftSlideBar) { text, x, y -> drawText(text, x, y, timeTextPaint) }
         getTimeAndPosition(rightSlideBar) { text, x, y -> drawText(text, x, y, timeTextPaint) }
-
-        // TODO REMOVE LATER
-        Log.e("ELAPSED TIME", "${System.currentTimeMillis() - t}")
-        Unit
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val eventResult = scaleDetector.onTouchEvent(event)
+
+        gestureDetector.onTouchEvent(event)
 
         if (!isScaling) {
             val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
@@ -455,10 +532,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     override fun onScale(scaleDetector: ScaleGestureDetector?): Boolean {
         scaleDetector?.scaleFactor?.takeIf { it < 1F }?.let {
-            currentVisibleColumnsCount += 5
-
-            while(firstVisibleColumn + currentVisibleColumnsCount >= columns.size - 10) {
-                firstVisibleColumn -= 5
+            if (firstVisibleColumn + currentVisibleColumnsCount <= columns.size - 10) {
+                currentVisibleColumnsCount += 5
             }
         } ?: let { currentVisibleColumnsCount -= 5 }
 
@@ -468,20 +543,35 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         return true
     }
 
-    // TODO works too slowly, REMOVE
-    private fun calculatePlayingPosition(): Int {
-
-        val divTime = System.nanoTime()
-
-        val div = columnBytes.size.divideBy(soundDuration.divideBy(currentPlayTimeMs)).toInt()
-
-        Log.e("DIV TIME", "${(System.nanoTime() - divTime)} ns")
-
-        return div
-    }
-
     // TODO remove later
     var loadedCallback: ((Boolean) -> Unit)? = null
+
+    // TODO below will be file saving logic
+
+    // TODO This fun will take trimmed audio file path, trim it and save
+    // TODO MB need to return true or false to show is operation ends successfully
+    fun trimAudio(trimmedAudioFileName: String) =
+        trimAudio(trimmedAudioFileName, getPositionTime(leftSlideBar), getPositionTime(rightSlideBar))
+
+    private fun trimAudio(trimmedAudioFileName: String, start: Long? = null, end: Long? = null): Boolean {
+        var s = start ?: 0L
+        var e = end ?: soundDuration
+
+        // TODO temporary file will be named "TEMP.(ext)"
+        val tempFileName = "TEMP.${soundFile?.filetype ?: "mp3"}"
+
+        val trimmedFile = File.createTempFile(trimmedAudioFileName, soundFile?.filetype)
+
+        // TODO replace by created temp file
+        val createdFile = File("")
+
+        return createdFile.exists()
+    }
+
+    private fun getPositionTime(position: Int) =
+        soundDuration / (columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L) * position
+
+
 
     private fun getTimeAndPosition(position: Int, result: (String, Float, Float) -> Unit) {
         columnBytes.takeIf { it.isNotEmpty() }?.let {
@@ -562,7 +652,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     // TODO To vals
     var loadingKeepGoing = false
     var loadingProgress = 0
-
     var numFramesSF = 0
 
     private fun processAudioFile(fileName: String) {
@@ -586,34 +675,29 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         })
 
 
-        val h = mutableListOf<UByte>()
+        val level = mutableListOf<UByte>()
 
         soundFile?.run {
             (numFrames * samplesPerFrame / sampleRate).let {
-                soundDuration = it * 1_000
+                soundDuration = it * 1_000L
             }
-
-            val t3 = System.currentTimeMillis()
 
             numFramesSF = numFrames
 
             getMinMax()?.let {
                 for (i in 0..numFrames) {
-                    h.add((calculateHeight(i, it.first, it.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
+                    level.add((calculateHeight(i, it.first, it.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
                 }
 
                 // TODO avg of 10 frames will be drawn on view
-                columnBytes = h.chunked(10).map { list -> list.map { mapped -> mapped.toInt() }.average() }.map { it.toUInt().toUByte() }.toMutableList()
+                columnBytes = level.chunked(10).map { list -> list.map { mapped -> mapped.toInt() }.average() }.map { it.toUInt().toUByte() }.toMutableList()
+
+                Log.e("COLUMN BYTES", "${columnBytes.size}")
 
                 // TODO every frame will be drawn on view
-//                columnBytes = h
+//                columnBytes = level
 
-//                currentVisibleColumnsCount = 400
                 currentVisibleColumnsCount = columnBytes.size
-
-                val t4 = System.currentTimeMillis()
-
-                Log.e("ELAPSED", "${t4 - t3} ms for gettin column bytes, size: ${columnBytes.size}")
             }
 
             SongMetadataReader(WeakReference(context), path).run {
@@ -692,14 +776,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private fun Paint.styleFill() = apply { style = Paint.Style.FILL }
 
-    private fun <T : Number> T?.divideBy(other: T?) =
-        this?.takeIf { it != 0L }
-            ?.let { it.toLong().div(other?.takeIf { o -> o != 0L }?.toLong() ?: 1L) } ?: 1L
-
     private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
-        value?.takeIf { this != it && predicate() }?.let {
-            receiver(it)
-        } ?: Unit
+        value?.takeIf { this != it && predicate() }?.let { receiver(it) } ?: Unit
 
     private fun <T> T.getIfAndInvalidate(value: T?, predicate: () -> Boolean, receiver: (T) -> Unit) =
         value?.takeIf { this != it && predicate() }?.let {

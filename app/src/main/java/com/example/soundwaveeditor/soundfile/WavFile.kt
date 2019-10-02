@@ -278,6 +278,7 @@ class WavFile {
             if (frameCounter == numFrames) return f
 
             for (c in 0 until numChannels) {
+                // TODO here is AOOBE exception
                 sampleBuffer[off] = readSample().toInt()
                 off++
             }
