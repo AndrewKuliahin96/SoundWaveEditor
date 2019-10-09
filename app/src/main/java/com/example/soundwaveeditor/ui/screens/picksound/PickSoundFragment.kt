@@ -1,7 +1,11 @@
 package com.example.soundwaveeditor.ui.screens.picksound
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -13,11 +17,16 @@ import com.example.soundwaveeditor.extensions.setVisibility
 import com.example.soundwaveeditor.ui.screens.base.BaseFragment
 import kotlinx.android.synthetic.main.fragment_pick_sound.*
 import android.util.Log
+import androidx.core.content.ContextCompat.checkSelfPermission
+import com.tbruyelle.rxpermissions2.RxPermissions
 import io.reactivex.Flowable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.startCoroutine
 
 
 @Suppress("SameParameterValue")
@@ -35,10 +44,26 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        val r = RxPermissions(this)
+            .request(Manifest.permission.READ_EXTERNAL_STORAGE)
+            .subscribe { granted ->
+                if (granted) {
+                    comeOn()
+                } else {
+                    Toast.makeText(context, "Permission denied!", Toast.LENGTH_SHORT).show()
+                }
+            }
+    }
+
+    private fun comeOn() {
         showAlert("Do u wanna pick sound to process?", "Open audio", true,
             R.string.dialog_ok, {
                 vSoundEditor.setVisibility(true)
                 drawHistogram()
+                // TODO refactor this
+                bTrim.setOnClickListener {
+                    vSoundEditor.trimAudio()
+                }
             },
             R.string.dialog_cancel, {
                 Toast.makeText(context, "Cancel", Toast.LENGTH_SHORT).show()
@@ -70,25 +95,29 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
 
             // TODO fix file formats
             // Testing for audio formats cases
-//            val path = "/storage/sdcard1/Test/example.aac"      // Static height of columns (static soundwave)
-//            val path = "/storage/sdcard1/Test/example.amr"      // Too slow opening, no columns
-//            val path = "/storage/sdcard1/Test/example.m4a"      // Static height of columns (static soundwave)
 //            val path = "/storage/sdcard1/Test/example.mp3"      // OK
 //            val path = "/storage/sdcard1/Test/example.wav"      // No columns
-//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // Slow opening or App is Not Responding
+//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
+            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).mp3"      // OK
+
+
+            // on Samsung ->
+//            val path = "/sdcard/Music/glad_valakas_mrwhite_-_vitas_(zf.fm).mp3"
 
             // TODO need to optimize WAVE files opening (now time === 2 sec in best case)
             // TODO also did it non-blocking to avoid ANR state
 
+//            val path = "/storage/sdcard1/Music/barnacle boi ☔ - _ flöating ☁.mp3"
+
             // Testing for duration cases
             // lb more than 5 min
-            val path = "/sdcard/Music/A\$AP Rocky x Moby x T.I. x Kid Cudi - A\$AP Forever REMIX [Рифмы и Панчи].mp3"
+//            val path = "/sdcard/Music/A\$AP Rocky x Moby x T.I. x Kid Cudi - A\$AP Forever REMIX [Рифмы и Панчи].mp3"
 
             // lb more than 1 min
 //            val path = "/sdcard/Music/\$ki Mask The \$lump God - Gone (Interlude).mp3"
 
             // Optional, but good practice as minVis... and current...
-            maxVisibleColumnsCount = 1_800
+//            maxVisibleColumnsCount = 1_800
 //            currentVisibleColumnsCount = 700
 
             // OK
@@ -116,6 +145,8 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                 }
 
                 player = MediaPlayer()
+
+                // TODO replace by s-thing non-depr or remove
                 player?.setAudioStreamType(AudioManager.STREAM_MUSIC)
                 player?.setDataSource(context, Uri.parse(File(path).absolutePath))
 
@@ -137,6 +168,7 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                             .subscribeOn(Schedulers.computation())
                             .observeOn(AndroidSchedulers.mainThread())
                             .subscribe({ t ->
+                                // TODO sync with media player position
                                 updatingCallback(t.time())
                             }, { e ->
                                 Log.e("ERROR", "${e.message}")

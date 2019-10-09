@@ -17,5 +17,16 @@
         <attr name="columnSpacingRatio" format="float"/>
         <attr name="columnVerticalPaddingRatio" format="float"/>
         <attr name="histogramTopPaddingRatio" format="float"/>
+<!--        TODO Filter and implement attributes receiving by view -->
+        <attr name="needToShowTime" format="boolean"/>
+        <attr name="isScalingEnabled" format="boolean"/>
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
+<!--        <attr name="needToShowTime" format="boolean"/>-->
     </declare-styleable>
 </resources>

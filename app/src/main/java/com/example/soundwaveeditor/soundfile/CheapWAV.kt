@@ -1,7 +1,11 @@
 package com.example.soundwaveeditor.soundfile
 
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
 import android.util.Log
 import java.io.File
+import java.util.*
 import kotlin.math.sqrt
 
 
@@ -28,6 +32,8 @@ class CheapWAV : CheapSoundFile() {
 
     @Throws(java.io.IOException::class)
     override fun readFile(file: File) {
+        Log.e("WAV FILE", "start")
+
         super.readFile(file)
 
         fileSizeBytes = file.length().toInt()
@@ -66,6 +72,8 @@ class CheapWAV : CheapSoundFile() {
                     }
                 }
             }
+
+            Log.e("WAV FILE", "end")
 
             wavFile.close()
         } catch (e: WavFileException) {

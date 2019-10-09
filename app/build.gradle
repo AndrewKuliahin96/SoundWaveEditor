@@ -36,4 +36,5 @@ dependencies {
     implementation "io.reactivex.rxjava2:rxjava:$rxJavaVersion"
     implementation "com.github.tbruyelle:rxpermissions:$rxPermissionsVersion"
     implementation 'androidx.lifecycle:lifecycle-extensions:2.0.0'
+    implementation 'com.github.tbruyelle:rxpermissions:0.10.2'
 }

@@ -1,5 +1,6 @@
 package com.example.soundwaveeditor.soundfile
 
+import android.media.MediaCodec
 import com.example.soundwaveeditor.extensions.getInt
 import java.io.File
 import java.io.FileInputStream
@@ -33,6 +34,14 @@ class CheapMP3 : CheapSoundFile() {
     private var bitrateSum = 0
     private var minGain = 0
     private var maxGain = 0
+
+//    override fun trimAudioFile(fileName: String, startTime: Long, endTime: Long): File? {
+//        val trimmedAudioFile = File("$fileName.$filetype")
+//
+////        val encoder = MediaCodec.createEncoderByType("audio/$filetype")
+//
+//        return null
+//    }
 
     @Throws(java.io.FileNotFoundException::class, java.io.IOException::class)
     override fun readFile(file: File) {
