@@ -97,9 +97,8 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
             // Testing for audio formats cases
 //            val path = "/storage/sdcard1/Test/example.mp3"      // OK
 //            val path = "/storage/sdcard1/Test/example.wav"      // No columns
-//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
-            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).mp3"      // OK
-
+            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
+//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).mp3"      // OK
 
             // on Samsung ->
 //            val path = "/sdcard/Music/glad_valakas_mrwhite_-_vitas_(zf.fm).mp3"

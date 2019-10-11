@@ -1,9 +1,9 @@
 package com.example.soundwaveeditor.soundfile
 
-import android.media.MediaCodec
 import com.example.soundwaveeditor.extensions.getInt
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 
 
 class CheapMP3 : CheapSoundFile() {
@@ -20,8 +20,11 @@ class CheapMP3 : CheapSoundFile() {
         }
     }
 
+//    override var decodedBytes: ByteBuffer? = null
     override var numFrames = 0
     override var frameGains = intArrayOf()
+    override var frameLens = intArrayOf()
+    override var frameOffsets = intArrayOf()
     override var fileSizeBytes = 0
     override var samplesPerFrame = 1152
     override var avgBitrateKbps = 0
@@ -48,6 +51,8 @@ class CheapMP3 : CheapSoundFile() {
         super.readFile(file)
         numFrames = 0
         maxFrames = 64  // This will grow as needed
+        frameOffsets = IntArray(maxFrames)
+        frameLens = IntArray(maxFrames)
         frameGains = IntArray(maxFrames)
         bitrateSum = 0
         minGain = 255
@@ -153,6 +158,9 @@ class CheapMP3 : CheapSoundFile() {
             }
 
             bitrateSum += bitRate
+
+            frameOffsets[numFrames] = pos
+            frameLens[numFrames] = frameLen
             frameGains[numFrames] = gain
 
             if (gain < minGain)
@@ -177,12 +185,18 @@ class CheapMP3 : CheapSoundFile() {
                 if (newMaxFrames < maxFrames * 2)
                     newMaxFrames = maxFrames * 2
 
+                val newOffsets = IntArray(newMaxFrames)
+                val newLens = IntArray(newMaxFrames)
                 val newGains = IntArray(newMaxFrames)
 
                 for (i in 0 until numFrames) {
+                    newOffsets[i] = frameOffsets[i]
+                    newLens[i] = frameLens[i]
                     newGains[i] = frameGains[i]
                 }
 
+                frameOffsets = newOffsets
+                frameLens = newLens
                 frameGains = newGains
                 maxFrames = newMaxFrames
             }
@@ -194,5 +208,40 @@ class CheapMP3 : CheapSoundFile() {
 
         // We're done reading the file, do some postprocessing
         avgBitrateKbps = if (numFrames > 0) bitrateSum / numFrames else 0
+    }
+
+    @Throws(java.io.IOException::class)
+    override fun trimAudioFile(outputFile: File, startFrame: Int, frames: Int) {
+        inputFile?.let {
+            val inputStream = FileInputStream(it)
+            val outputStream = FileOutputStream(outputFile)
+
+            var maxFrameLen = 0
+
+            for (i in 0 until frames) {
+                if (frameLens[startFrame + i] > maxFrameLen)
+                    maxFrameLen = frameLens[startFrame + i]
+            }
+
+            val buffer = ByteArray(maxFrameLen)
+            var pos = 0
+
+            for (i in 0 until frames) {
+                val skip = frameOffsets[startFrame + i] - pos
+                val len = frameLens[startFrame + i]
+
+                if (skip > 0) {
+                    inputStream.skip(skip.toLong())
+                    pos += skip
+                }
+
+                inputStream.read(buffer, 0, len)
+                outputStream.write(buffer, 0, len)
+                pos += len
+            }
+
+            inputStream.close()
+            outputStream.close()
+        }
     }
 }

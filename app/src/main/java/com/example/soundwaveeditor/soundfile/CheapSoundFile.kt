@@ -2,6 +2,7 @@ package com.example.soundwaveeditor.soundfile
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
@@ -57,9 +58,13 @@ open class CheapSoundFile {
         }
     }
 
+//    open var decodedBytes: ByteBuffer? = null
+//    var decodedBytes: ByteBuffer? = null
     open var numFrames = 0
     open var samplesPerFrame = 0
     open var frameGains = intArrayOf()
+    open var frameLens = intArrayOf()
+    open var frameOffsets = intArrayOf()
     open var fileSizeBytes = 0
     open var avgBitrateKbps = 0
     open var sampleRate = 0
@@ -84,170 +89,178 @@ open class CheapSoundFile {
 
     open fun getSeekableFrameOffset(frame: Int) = -1
 
-    @Throws(java.io.IOException::class)
-    open fun trimAudioFile(file: File, startTime: Long, endTime: Long) {
-        val startOffset = ((startTime * sampleRate) * 2 * channels).toInt()
-        var samplesNumber = ((endTime - startTime) * sampleRate).toInt()
+    private fun msToFrames(milliseconds: Long) =
+        (milliseconds / 1_000 * sampleRate / samplesPerFrame + 0.5).toInt()
 
-        val channelsNumber = channels.takeUnless { it == 1 }?.let { it } ?: 2
-        val mimeType = "audio/m4a-latm"
-        val bitrate = 64000 * channelsNumber
+    fun trimAudioFile(file: File, startTime: Long, endTime: Long)
+            = trimAudioFile(file, msToFrames(startTime), msToFrames(endTime - startTime))
 
-        val mediaCodec = MediaCodec.createEncoderByType(mimeType)
-        val mediaFormat = MediaFormat.createAudioFormat(mimeType, sampleRate, channelsNumber)
+    open fun trimAudioFile(outputFile: File, startFrame: Int, frames: Int) = Unit
 
-        mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, avgBitrateKbps)
-        mediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        mediaCodec.start()
-
-        var estimatedEncodedSize = ((endTime - startTime) * (bitrate / 8) * 1.1).toInt()
-
-        var encodedBytes = ByteBuffer.allocate(estimatedEncodedSize)
-
-        val inputBuffers = mediaCodec.inputBuffers
-        var outputBuffers = mediaCodec.outputBuffers
-
-        val info = MediaCodec.BufferInfo()
-        var doneReading = false
-        var presentationTime: Long
-
-        val frameSize = 1024
-        var buffer = ByteArray(frameSize * channelsNumber * 2)
-
-        decodedBytes?.position(startOffset)
-
-        samplesNumber += (2 * frameSize)
-
-        var totalFramesNumber = 1 + (samplesNumber / frameSize)
-
-        if (samplesNumber % frameSize != 0) {
-            totalFramesNumber++
-        }
-
-        val frameSizes = IntArray(totalFramesNumber)
-        var numberOutFrames = 0
-        var numFrames = 0
-        var numSamplesLeft = samplesNumber
-        var encodedSamplesSize = 0
-        var encodedSamples: ByteArray? = null
-
-        while (true) {
-            val inputBufferIndex = mediaCodec.dequeueInputBuffer(100 )
-
-            if (!doneReading && inputBufferIndex >= 0) {
-                if (numSamplesLeft <= 0) {
-                    mediaCodec.queueInputBuffer(inputBufferIndex, 0, 0, -1, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                    doneReading = true
-                } else {
-                    inputBuffers[inputBufferIndex].clear()
-
-                    if (buffer.size > inputBuffers[inputBufferIndex].remaining()) {
-                        continue
-                    }
-
-                    val bufferSize = if (channels == 1) buffer.size / 2 else buffer.size
-
-                    decodedBytes?.let { decBytes ->
-                        decBytes.takeIf { it.remaining() < bufferSize }?.let {
-                            for (i in it.remaining() .. bufferSize) {
-                                buffer[i] = 0
-                            }
-
-                            decodedBytes?.get(buffer, 0, it.remaining())
-                        } ?: let {
-                            decodedBytes?.get(buffer, 0, decBytes.remaining())
-                        }
-                    }
-
-                    if (channels == 1) {
-                        for (i in bufferSize - 1 until 1 step -2) {
-                            buffer[2 * i + 1] = buffer[i]
-                            buffer[2 * i] = buffer[i - 1]
-                            buffer[2 * i - 1] = buffer[2 * i + 1]
-                            buffer[2 * i - 2] = buffer[2 * i]
-                        }
-                    }
-
-                    numSamplesLeft -= frameSize
-                    inputBuffers[inputBufferIndex].put(buffer)
-                    presentationTime = (((numFrames++) * frameSize * 1E6) / sampleRate).toLong()
-                    mediaCodec.queueInputBuffer(inputBufferIndex, 0, buffer.size, presentationTime, 0)
-                }
-            }
-
-            val outputBufferIndex = mediaCodec.dequeueOutputBuffer(info, 100)
-
-            if (outputBufferIndex >= 0 && info.size > 0 && info.presentationTimeUs >= 0) {
-                if (numberOutFrames < frameSizes.size) {
-                    frameSizes[numberOutFrames++] = info.size
-                }
-
-                if (encodedSamplesSize < info.size) {
-                    encodedSamplesSize = info.size
-                    encodedSamples = ByteArray(encodedSamplesSize)
-                }
-
-                encodedSamples?.let {
-                    outputBuffers[outputBufferIndex].get(it, 0, info.size)
-                    outputBuffers[outputBufferIndex].clear()
-                }
-
-                mediaCodec.releaseOutputBuffer(outputBufferIndex, false)
-
-                if (encodedBytes.remaining() < info.size) {
-                    estimatedEncodedSize = (estimatedEncodedSize * 1.2).toInt()
-
-                    val newEncodedBytes = ByteBuffer.allocate(estimatedEncodedSize)
-                    val position = encodedBytes.position()
-
-                    encodedBytes.rewind()
-                    newEncodedBytes.put(encodedBytes)
-                    encodedBytes = newEncodedBytes
-                    encodedBytes.position(position)
-                }
-            } else if (outputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
-                outputBuffers = mediaCodec.outputBuffers
-            }
-
-            if ((info.flags.or(MediaCodec.BUFFER_FLAG_END_OF_STREAM)) != 0) {
-                break
-            }
-        }
-
-        val encodedSize = encodedBytes.position()
-
-        encodedBytes.rewind()
-        mediaCodec.stop()
-        mediaCodec.release()
-
-        buffer = ByteArray(4096)
-
-        try {
-            val outputStream = FileOutputStream(file)
-
-            outputStream.write(MP4Header.getMP4Header(sampleRate, channelsNumber, frameSizes, bitrate))
-
-            while (encodedSize - encodedBytes.position() > buffer.size) {
-                encodedBytes.get(buffer)
-                outputStream.write(buffer)
-            }
-
-            val remaining = encodedSize - encodedBytes.position()
-
-            if(remaining > 0) {
-                encodedBytes.get(buffer, 0, remaining)
-                outputStream.write(buffer, 0, remaining)
-            }
-
-            outputStream.close()
-        } catch (e: IOException) {
-            // TODO refactor it
-            Log.e("SOUND FILE TRIM", "Failed to create .m4a file")
-            e.message?.let { Log.e("SOUND FILE TRIM", it) }
-        }
-    }
-
-    private var decodedBytes: ByteBuffer? = null
+//    @Throws(java.io.IOException::class)
+//    open fun trimAudioFile(file: File, startTime: Long, endTime: Long) {
+//        val startOffset = ((startTime / 1_000 * sampleRate) * 2 * channels).toInt()
+//        var samplesNumber = ((endTime - startTime) / 1_000 * sampleRate).toInt()
+//
+//        val channelsNumber = channels.takeUnless { it == 1 }?.let { it } ?: 2
+//        val mimeType = "audio/mp4a-latm"
+//        val bitrate = 64000 * channelsNumber
+//
+//        val mediaCodec = MediaCodec.createEncoderByType(mimeType)
+//        val mediaFormat = MediaFormat.createAudioFormat(mimeType, sampleRate, channelsNumber)
+//
+//        mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, avgBitrateKbps)
+//        mediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+//        mediaCodec.start()
+//
+//        var estimatedEncodedSize = ((endTime - startTime) / 1_000 * (bitrate / 8) * 1.1).toInt()
+//
+//        Log.e("estimated", "$estimatedEncodedSize")
+//
+//        var encodedBytes = ByteBuffer.allocate(estimatedEncodedSize)
+//
+//        val inputBuffers = mediaCodec.inputBuffers
+//        var outputBuffers = mediaCodec.outputBuffers
+//
+//        val info = MediaCodec.BufferInfo()
+//        var doneReading = false
+//        var presentationTime: Long
+//
+//        val frameSize = 1024
+//        var buffer = ByteArray(frameSize * channelsNumber * 2)
+//
+//        decodedBytes?.position(startOffset)
+//
+//        samplesNumber += (2 * frameSize)
+//
+//        var totalFramesNumber = 1 + (samplesNumber / frameSize)
+//
+//        if (samplesNumber % frameSize != 0) {
+//            totalFramesNumber++
+//        }
+//
+//        val frameSizes = IntArray(totalFramesNumber)
+//        var numberOutFrames = 0
+//        var numFrames = 0
+//        var numSamplesLeft = samplesNumber
+//        var encodedSamplesSize = 0
+//        var encodedSamples: ByteArray? = null
+//
+//        while (true) {
+//            val inputBufferIndex = mediaCodec.dequeueInputBuffer(100 )
+//
+//            if (!doneReading && inputBufferIndex >= 0) {
+//                if (numSamplesLeft <= 0) {
+//                    mediaCodec.queueInputBuffer(inputBufferIndex, 0, 0, -1, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+//                    doneReading = true
+//                } else {
+//                    inputBuffers[inputBufferIndex].clear()
+//
+//                    if (buffer.size > inputBuffers[inputBufferIndex].remaining()) {
+//                        continue
+//                    }
+//
+//                    val bufferSize = if (channels == 1) buffer.size / 2 else buffer.size
+//
+//                    decodedBytes?.let { decBytes ->
+//                        decBytes.takeIf { it.remaining() < bufferSize }?.let {
+//                            for (i in it.remaining() .. bufferSize) {
+//                                buffer[i] = 0
+//                            }
+//
+//                            decodedBytes?.get(buffer, 0, it.remaining())
+//                        } ?: let {
+//                            decodedBytes?.get(buffer, 0, decBytes.remaining())
+//                        }
+//                    }
+//
+//                    if (channels == 1) {
+//                        for (i in bufferSize - 1 until 1 step -2) {
+//                            buffer[2 * i + 1] = buffer[i]
+//                            buffer[2 * i] = buffer[i - 1]
+//                            buffer[2 * i - 1] = buffer[2 * i + 1]
+//                            buffer[2 * i - 2] = buffer[2 * i]
+//                        }
+//                    }
+//
+//                    numSamplesLeft -= frameSize
+//                    inputBuffers[inputBufferIndex].put(buffer)
+//                    presentationTime = (((numFrames++) * frameSize * 1E6) / sampleRate).toLong()
+//                    mediaCodec.queueInputBuffer(inputBufferIndex, 0, buffer.size, presentationTime, 0)
+//                }
+//            }
+//
+//            val outputBufferIndex = mediaCodec.dequeueOutputBuffer(info, 100)
+//
+//            if (outputBufferIndex >= 0 && info.size > 0 && info.presentationTimeUs >= 0) {
+//                if (numberOutFrames < frameSizes.size) {
+//                    frameSizes[numberOutFrames++] = info.size
+//                }
+//
+//                if (encodedSamplesSize < info.size) {
+//                    encodedSamplesSize = info.size
+//                    encodedSamples = ByteArray(encodedSamplesSize)
+//                }
+//
+//                encodedSamples?.let {
+//                    outputBuffers[outputBufferIndex].get(it, 0, info.size)
+//                    outputBuffers[outputBufferIndex].clear()
+//                }
+//
+//                mediaCodec.releaseOutputBuffer(outputBufferIndex, false)
+//
+//                if (encodedBytes.remaining() < info.size) {
+//                    estimatedEncodedSize = (estimatedEncodedSize * 1.2).toInt()
+//
+//                    val newEncodedBytes = ByteBuffer.allocate(estimatedEncodedSize)
+//                    val position = encodedBytes.position()
+//
+//                    encodedBytes.rewind()
+//                    newEncodedBytes.put(encodedBytes)
+//                    encodedBytes = newEncodedBytes
+//                    encodedBytes.position(position)
+//                }
+//            } else if (outputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+//                outputBuffers = mediaCodec.outputBuffers
+//            }
+//
+//            if ((info.flags.or(MediaCodec.BUFFER_FLAG_END_OF_STREAM)) != 0) {
+//                break
+//            }
+//        }
+//
+//        val encodedSize = encodedBytes.position()
+//
+//        encodedBytes.rewind()
+//        mediaCodec.stop()
+//        mediaCodec.release()
+//
+//        buffer = ByteArray(4096)
+//
+//        try {
+//            val outputStream = FileOutputStream(file)
+//
+//            outputStream.write(MP4Header.getMP4Header(sampleRate, channelsNumber, frameSizes, bitrate))
+//
+//            while (encodedSize - encodedBytes.position() > buffer.size) {
+//                encodedBytes.get(buffer)
+//                outputStream.write(buffer)
+//            }
+//
+//            val remaining = encodedSize - encodedBytes.position()
+//
+//            if(remaining > 0) {
+//                encodedBytes.get(buffer, 0, remaining)
+//                outputStream.write(buffer, 0, remaining)
+//            }
+//
+//            outputStream.close()
+//        } catch (e: IOException) {
+//            // TODO refactor it
+//            Log.e("SOUND FILE TRIM", "Failed to create .m4a file")
+//            e.message?.let { Log.e("SOUND FILE TRIM", it) }
+//        }
+//    }
 
     fun isFilenameSupported(filename: String): Boolean {
         val components =

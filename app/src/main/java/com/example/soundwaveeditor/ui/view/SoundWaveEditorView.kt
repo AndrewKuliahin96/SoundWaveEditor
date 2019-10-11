@@ -22,6 +22,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.io.Serializable
 import java.lang.ref.WeakReference
+import java.util.*
 import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 import kotlin.math.min
@@ -705,41 +706,27 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     // TODO remove later
     var loadedCallback: ((Boolean) -> Unit)? = null
 
+    // TODO user must give external/internal storage saving variant and new file path
+    // TODO so, refactor fun below ->
     fun trimAudio() {
         thread {
             fileName?.split("/")?.last()?.dropLastWhile { it != '.' }?.let { title ->
                 Log.e("TRIM AUDIO", "created temp, $title")
 
-                makeSoundFileName("$title (trimmed)", ".m4a")?.let { sfName ->
-                    var outPath: String? = sfName
+                makeSoundFileName(
+                    "$title (trimmed)",
+                    ".${soundFile?.filetype?.toLowerCase(Locale.getDefault()) ?: "m4a"}")?.let { sfName ->
 
-                    outPath?.let {
-                        var outFile = File(it)
-                        var fallbackToWAV = false
+                    val outFile = File(sfName)
 
-                        try {
-                            soundFile?.trimAudioFile(outFile, getPositionTime(leftSlideBar), getPositionTime(rightSlideBar))
-                        } catch (e: Exception) {
-                            Log.e("TRIM AUDIO", "failed, ${e.message}")
+                    try {
+                        soundFile?.trimAudioFile(outFile, getPositionTime(leftSlideBar), getPositionTime(rightSlideBar))
 
-                            outFile.takeIf { of -> of.exists() }?.delete()
+                        Log.e("TRIM AUDIO", "created, ${outFile.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.e("TRIM AUDIO", "failed, ${e.message}")
 
-                            fallbackToWAV = true
-                        }
-
-                        if (fallbackToWAV) {
-                            outPath = makeSoundFileName("$title (trimmed)", ".wav")
-
-                            outFile = File(it)
-
-                            try {
-                                soundFile?.trimAudioFile(outFile, getPositionTime(leftSlideBar), getPositionTime(rightSlideBar))
-                            } catch (e: Exception) {
-                                Log.e("TRIM AUDIO", "failed, ${e.message}")
-
-                                outFile.takeIf { of -> of.exists() }?.delete()
-                            }
-                        }
+                        outFile.takeIf { of -> of.exists() }?.delete()
                     }
                 }
             }
