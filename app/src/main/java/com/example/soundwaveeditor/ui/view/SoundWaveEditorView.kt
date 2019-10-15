@@ -4,12 +4,10 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
-import android.os.Bundle
 import android.os.Environment
 import android.os.Parcelable
 import android.util.AttributeSet
 import android.util.Log
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -17,10 +15,7 @@ import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
 import com.example.soundwaveeditor.soundfile.CheapSoundFile
 import com.example.soundwaveeditor.soundfile.SongMetadataReader
-import kotlinx.android.parcel.Parcelize
 import java.io.File
-import java.io.RandomAccessFile
-import java.io.Serializable
 import java.lang.ref.WeakReference
 import java.util.*
 import kotlin.concurrent.thread
@@ -715,7 +710,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
                 makeSoundFileName(
                     "$title (trimmed)",
-                    ".${soundFile?.filetype?.toLowerCase(Locale.getDefault()) ?: "m4a"}")?.let { sfName ->
+                    ".${soundFile?.fileType?.toLowerCase(Locale.getDefault()) ?: "m4a"}")?.let { sfName ->
 
                     val outFile = File(sfName)
 
@@ -868,12 +863,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 }
 
                 // TODO avg of 10 frames will be drawn on view
-//                columnBytes = level.chunked(10).map { list -> list.map { mapped -> mapped.toInt() }.average() }.map { it.toUInt().toUByte() }.toMutableList()
+                columnBytes = level.chunked(10).map { list -> list.map { mapped -> mapped.toInt() }.average() }.map { it.toUInt().toUByte() }.toMutableList()
 
                 // TODO every frame will be drawn on view
                 // TODO this may slow drawing speed
 
-                columnBytes = level
+//                columnBytes = level
 
                 maxVisibleColumnsCount = columnBytes.size / 5
                 currentVisibleColumnsCount = columnBytes.size / 5 - 100
@@ -884,7 +879,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
             SongMetadataReader(WeakReference(context), path).run {
                 soundData = SoundData(
-                    path, title, artist, album, year, filetype, sampleRate, avgBitrateKbps
+                    path, title, artist, album, year, fileType, sampleRate, avgBitrateKbps
                 )
             }
 
@@ -944,6 +939,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private fun getGain(i: Int, numFrames: Int, frameGains: IntArray): Float {
         val x = min(i, numFrames - 1)
+
+        Log.e("GAIN", "$x, $i, ${numFrames - 1}")
 
         return if (numFrames < 2) {
             frameGains[x].toFloat()

@@ -8,14 +8,13 @@ import kotlin.math.abs
 
 class CheapWAV : CheapSoundFile() {
     companion object {
-        fun getFactory() =  object : Factory {
+        val factory =  object : Factory {
             override val supportedExtensions = arrayOf("wav")
 
             override fun create() = CheapWAV()
         }
     }
 
-//    override var decodedBytes: ByteBuffer? = null
     override var numFrames = 0
     override var samplesPerFrame = 1024
     override var frameOffsets = intArrayOf()
@@ -25,7 +24,7 @@ class CheapWAV : CheapSoundFile() {
     override var sampleRate = 0
     override var channels = 0
     override var avgBitrateKbps = sampleRate * channels * 2 / 1024
-    override var filetype = "WAV"
+    override var fileType = "WAV"
 
     private var framesNum = 0
     private var frameBytes = 0
@@ -42,7 +41,7 @@ class CheapWAV : CheapSoundFile() {
         }
 
         inputFile?.let {
-            val stream = FileInputStream(it)
+            val stream = FileInputStream(file)
             val header = ByteArray(12)
 
             stream.read(header, 0, 12)
@@ -61,6 +60,7 @@ class CheapWAV : CheapSoundFile() {
 
             while (offset + 8 <= fileSizeBytes) {
                 val chunkHeader = ByteArray(8)
+
                 stream.read(chunkHeader, 0, 8)
                 offset += 8
 
@@ -72,9 +72,7 @@ class CheapWAV : CheapSoundFile() {
                 if (chunkHeader[0] == 'f'.toByte() && chunkHeader[1] == 'm'.toByte() &&
                     chunkHeader[2] == 't'.toByte() && chunkHeader[3] == ' '.toByte()) {
                     if (chunkLen < 16 || chunkLen > 1024) {
-                        throw java.io.IOException(
-                            "WAV file has bad fmt chunk"
-                        )
+                        throw java.io.IOException("WAV file has bad fmt chunk")
                     }
 
                     val fmt = ByteArray(chunkLen)
@@ -91,7 +89,6 @@ class CheapWAV : CheapSoundFile() {
                     if (format != 1) {
                         throw java.io.IOException("Unsupported WAV file encoding")
                     }
-
                 } else if (chunkHeader[0] == 'd'.toByte() && chunkHeader[1] == 'a'.toByte() &&
                     chunkHeader[2] == 't'.toByte() && chunkHeader[3] == 'a'.toByte()) {
                     if (channels == 0 || sampleRate == 0) {
@@ -113,6 +110,7 @@ class CheapWAV : CheapSoundFile() {
 
                     while (i < chunkLen) {
                         val oneFrameBytes = frameBytes
+
                         if (i + oneFrameBytes > chunkLen) {
                             i = chunkLen - oneFrameBytes
                         }
@@ -123,10 +121,12 @@ class CheapWAV : CheapSoundFile() {
                         var j = 1
 
                         while (j < oneFrameBytes) {
-                            val `val` = abs(oneFrame[j].toInt())
-                            if (`val` > maxGain) {
-                                maxGain = `val`
+                            val frameVal = abs(oneFrame[j].toInt())
+
+                            if (frameVal > maxGain) {
+                                maxGain = frameVal
                             }
+
                             j += 4 * channels
                         }
 
@@ -138,11 +138,8 @@ class CheapWAV : CheapSoundFile() {
                         offset += oneFrameBytes
                         i += oneFrameBytes
 
-                        if (mProgressListener != null) {
-                            val keepGoing = mProgressListener?.reportProgress(
-                                i * 1.0 / chunkLen
-                            )
-                            if (keepGoing != true) {
+                        if (progressListener != null) {
+                            if (progressListener?.reportProgress(i * 1.0 / fileSizeBytes) != true) {
                                 break
                             }
                         }

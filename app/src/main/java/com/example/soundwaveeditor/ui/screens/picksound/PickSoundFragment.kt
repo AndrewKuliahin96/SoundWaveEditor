@@ -44,6 +44,8 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+
+
         val r = RxPermissions(this)
             .request(Manifest.permission.READ_EXTERNAL_STORAGE)
             .subscribe { granted ->
