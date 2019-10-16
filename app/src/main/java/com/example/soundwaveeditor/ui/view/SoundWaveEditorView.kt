@@ -48,7 +48,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val MOVE_CENTER = 16
     }
 
-    private var scaleDetector: ScaleGestureDetector
+    private val scaleDetector: ScaleGestureDetector
 
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
@@ -66,6 +66,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var histogramYAxis = ZERO_SIZE_F
     private var histogramHeight = ZERO_SIZE_F
 
+    private var tapCoordinateX = ZERO_SIZE_F
     private var position = ZERO_SIZE_F
     private var movin = NO_MOVE
     private var isScaling = false
@@ -239,6 +240,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     val updatingCallback = { time: Long ->
         currentPlayTimeMs += time
     }
+
+    var seekingCallback: ((Int) -> Unit)? = null
 
     var updatePeriod: Long? = 0L
 
@@ -439,6 +442,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                         else -> NO_MOVE
                     }
 
+                    tapCoordinateX = event.x
                     position = event.x
                 }
 
@@ -456,6 +460,17 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     }
 
                     position = event.x
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    if (movin == NO_MOVE && tapCoordinateX == event.x) {
+                        (event.x / (columnWidth + spacingBetweenColumns) + firstVisibleColumn).toInt().let {
+                            getPositionTime(it).let { seekPos ->
+                                seekingCallback?.invoke(seekPos.toInt())
+                                currentPlayTimeMs = seekPos
+                            }
+                        }
+                    }
                 }
             }
         }

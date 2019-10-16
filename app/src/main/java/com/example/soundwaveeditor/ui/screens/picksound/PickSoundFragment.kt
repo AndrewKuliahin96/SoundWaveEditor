@@ -151,10 +151,16 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                     Log.e("COMPLETED", "ok")
                 }
 
-                player?.setOnPreparedListener {
+                player?.setOnPreparedListener { p ->
                     player?.start()
 
                     Log.e("PREPARED", "ok")
+
+                    seekingCallback = {
+                        p.seekTo(it)
+
+                        Log.e("SEEK", "$it")
+                    }
 
                     updatePeriod?.let {
                         Flowable
