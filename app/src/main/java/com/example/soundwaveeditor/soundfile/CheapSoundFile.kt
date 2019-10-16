@@ -6,9 +6,8 @@ import java.util.*
 
 open class CheapSoundFile {
     companion object {
-        private val HEX_CHARS = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f')
+        var subclassFactories = arrayOf(CheapMP3.factory, CheapWAV.factory)
 
-        var subclassFactories = arrayOf(CheapMP3.factory, CheapWAV.factory, CheapAAC.factory, CheapAMR.factory)
         var supportedExtensions = ArrayList<String>()
         var extensionMap = HashMap<String, Factory>()
 
@@ -36,17 +35,10 @@ open class CheapSoundFile {
                 return null
             }
 
-            val factory = extensionMap[components[components.size - 1]] ?: return null
-
-            return factory.create().apply {
-                setListener(listener)
+            return extensionMap[components[components.size - 1]]?.create()?.apply {
+                progressListener = listener
                 readFile(file)
             }
-
-//            return extensionMap[components[components.size - 1]]?.create()?.apply {
-//                progressListener = listener
-//                readFile(file)
-//            }
         }
 
         interface ProgressListener {
@@ -80,41 +72,9 @@ open class CheapSoundFile {
 
     open fun trimAudioFile(outputFile: File, startFrame: Int, frames: Int) = Unit
 
-    fun trimAudioFile(file: File, startTime: Long, endTime: Long)
-            = trimAudioFile(file, msToFrames(startTime), msToFrames(endTime - startTime))
-
-    open fun setListener(listener: ProgressListener) {
-        progressListener = listener
-    }
-
-    open fun getSeekableFrameOffset(frame: Int) = -1
+    fun trimAudioFile(file: File, startTime: Long, endTime: Long) =
+        trimAudioFile(file, msToFrames(startTime), msToFrames(endTime - startTime))
 
     private fun msToFrames(milliseconds: Long) =
         (milliseconds / 1_000 * sampleRate / samplesPerFrame + 0.5).toInt()
-
-    fun isFilenameSupported(filename: String): Boolean {
-        val components =
-            filename.toLowerCase(Locale.getDefault()).split("\\.".toRegex()).dropLastWhile { it.isEmpty() }
-                .toTypedArray()
-        return if (components.size < 2) {
-            false
-        } else extensionMap.containsKey(components[components.size - 1])
-    }
-
-    fun getSupportedExtensions() = supportedExtensions.toTypedArray()
-
-    fun bytesToHex(hash: ByteArray): String {
-        val buf = CharArray(hash.size * 2)
-
-        var i = 0
-        var x = 0
-
-        while (i < hash.size) {
-            buf[x++] = HEX_CHARS[hash[i].toInt().ushr(4) and 0xf]
-            buf[x++] = HEX_CHARS[hash[i].toInt() and 0xf]
-            i++
-        }
-
-        return String(buf)
-    }
 }

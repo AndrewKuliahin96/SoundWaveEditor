@@ -16,17 +16,18 @@ class CheapWAV : CheapSoundFile() {
     }
 
     override var numFrames = 0
-    override var samplesPerFrame = 1024
+    override var samplesPerFrame = 0
+        get() = sampleRate / 50
     override var frameOffsets = intArrayOf()
     override var frameLens = intArrayOf()
     override var frameGains = intArrayOf()
     override var fileSizeBytes = 0
     override var sampleRate = 0
     override var channels = 0
-    override var avgBitrateKbps = sampleRate * channels * 2 / 1024
+    override var avgBitrateKbps = 0
+        get() = sampleRate * channels * 2 / 1024
     override var fileType = "WAV"
 
-    private var framesNum = 0
     private var frameBytes = 0
     private var offset = 0
 
@@ -41,7 +42,7 @@ class CheapWAV : CheapSoundFile() {
         }
 
         inputFile?.let {
-            val stream = FileInputStream(file)
+            val stream = FileInputStream(it)
             val header = ByteArray(12)
 
             stream.read(header, 0, 12)
@@ -95,13 +96,12 @@ class CheapWAV : CheapSoundFile() {
                         throw java.io.IOException("Bad WAV file: data chunk before fmt chunk")
                     }
 
-                    val frameSamples = sampleRate * channels / 50
-                    frameBytes = frameSamples * 2
+                    frameBytes = (sampleRate * channels / 50) * 2
 
-                    framesNum = (chunkLen + (frameBytes - 1)) / frameBytes
-                    frameOffsets = IntArray(framesNum)
-                    frameLens = IntArray(framesNum)
-                    frameGains = IntArray(framesNum)
+                    numFrames = (chunkLen + (frameBytes - 1)) / frameBytes
+                    frameOffsets = IntArray(numFrames)
+                    frameLens = IntArray(numFrames)
+                    frameGains = IntArray(numFrames)
 
                     val oneFrame = ByteArray(frameBytes)
 

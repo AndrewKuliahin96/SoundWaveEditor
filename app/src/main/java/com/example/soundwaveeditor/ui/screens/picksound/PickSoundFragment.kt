@@ -2,10 +2,7 @@ package com.example.soundwaveeditor.ui.screens.picksound
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.content.pm.PackageManager
 import android.media.AudioManager
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
@@ -17,16 +14,13 @@ import com.example.soundwaveeditor.extensions.setVisibility
 import com.example.soundwaveeditor.ui.screens.base.BaseFragment
 import kotlinx.android.synthetic.main.fragment_pick_sound.*
 import android.util.Log
-import androidx.core.content.ContextCompat.checkSelfPermission
 import com.tbruyelle.rxpermissions2.RxPermissions
 import io.reactivex.Flowable
 import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import java.io.File
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.startCoroutine
 
 
 @Suppress("SameParameterValue")
@@ -41,12 +35,12 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
         }
     }
 
+    private var rxPermissions: Disposable? = null
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-
-
-        val r = RxPermissions(this)
+        rxPermissions = RxPermissions(this)
             .request(Manifest.permission.READ_EXTERNAL_STORAGE)
             .subscribe { granted ->
                 if (granted) {
@@ -55,6 +49,11 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                     Toast.makeText(context, "Permission denied!", Toast.LENGTH_SHORT).show()
                 }
             }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        rxPermissions?.dispose()
     }
 
     private fun comeOn() {
@@ -95,10 +94,7 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
     private fun drawHistogram() {
         vSoundEditor.apply {
 
-            // TODO fix file formats
             // Testing for audio formats cases
-//            val path = "/storage/sdcard1/Test/example.mp3"      // OK
-//            val path = "/storage/sdcard1/Test/example.wav"      // No columns
             val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
 //            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).mp3"      // OK
 

@@ -1,29 +1,29 @@
 package com.example.soundwaveeditor.ui.view
 
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.os.Environment
-import android.os.Parcelable
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
-import androidx.core.content.ContextCompat
 import com.example.soundwaveeditor.R
+import com.example.soundwaveeditor.extensions.getColorCompat
 import com.example.soundwaveeditor.soundfile.CheapSoundFile
 import com.example.soundwaveeditor.soundfile.SongMetadataReader
+import com.example.soundwaveeditor.utils.SimpleScaleListener
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.*
 import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 import kotlin.math.min
+
+
 @ExperimentalUnsignedTypes
-class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context, attrs),
-    ScaleGestureDetector.OnScaleGestureListener {
+class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context, attrs) {
 
     companion object {
         private const val MINUTES_TWO_SYMBOLS_TIME_FORMAT = "%02d:%02d"
@@ -66,7 +66,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var histogramYAxis = ZERO_SIZE_F
     private var histogramHeight = ZERO_SIZE_F
 
-    private var position = 0F
+    private var position = ZERO_SIZE_F
     private var movin = NO_MOVE
     private var isScaling = false
 
@@ -75,6 +75,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var inactiveColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
     private var activeColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
+
+    private var playBarColumnPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
     private var slideBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
 
@@ -115,6 +117,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             inactiveColumnsPaint.color = it
         }
 
+    var playBarColor = android.R.color.holo_red_light
+        set(value) = field.getIfNewAndInvalidate(value) {
+            field = it
+            playBarColumnPaint.color = it
+        }
+
     var activeColumnsColor = android.R.color.holo_red_light
         set(value) = field.getIfNewAndInvalidate(value) {
             field = it
@@ -150,6 +158,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         set(value) = field.getIfAndInvalidate(value, { value > 0L }, { field = it })
 
     var needToRoundColumns = false
+        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+
+    var needToShowTime = false
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     var histogramTopPaddingRatio = DEFAULT_HISTOGRAM_TOP_PADDING
@@ -229,14 +240,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         currentPlayTimeMs += time
     }
 
-    init {
-        // TODO test HA performance and if it low -> remove this 4 fuckin lines below
-        // TODO also remove @android:hardwareAccelerated="true" in manifest
-//        setLayerType(LAYER_TYPE_HARDWARE, slideBarPaint)
-//        setLayerType(LAYER_TYPE_HARDWARE, activeColumnsPaint)
-//        setLayerType(LAYER_TYPE_HARDWARE, inactiveColumnsPaint)
-//        setLayerType(LAYER_TYPE_HARDWARE, timeTextPaint)
+    var updatePeriod: Long? = 0L
 
+    var loadingKeepGoing = false
+    var loadingProgress = 0
+    var numFramesSF = 0
+
+    var loadedCallback: ((Boolean) -> Unit)? = null
+
+    init {
         context.theme.obtainStyledAttributes(attrs, R.styleable.SoundWaveEditorView, 0, 0).apply {
             timeTextSize = getDimension(
                 R.styleable.SoundWaveEditorView_timeTextSize, DEFAULT_TIME_TEXT_SIZE
@@ -244,27 +256,32 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
             timeTextColor = getColor(
                 R.styleable.SoundWaveEditorView_timeTextColor,
-                ContextCompat.getColor(context, android.R.color.black)
+                context.getColorCompat(android.R.color.black)
             )
 
             histogramBackgroundColor = getColor(
                 R.styleable.SoundWaveEditorView_histogramBackground,
-                ContextCompat.getColor(context, android.R.color.transparent)
+                context.getColorCompat(android.R.color.transparent)
             )
 
             activeColumnsColor = getColor(
                 R.styleable.SoundWaveEditorView_activeColumnsColor,
-                ContextCompat.getColor(context, android.R.color.holo_red_light)
+                context.getColorCompat(android.R.color.holo_red_light)
+            )
+
+            playBarColor = getColor(
+                R.styleable.SoundWaveEditorView_playBarColor,
+                context.getColorCompat(android.R.color.holo_red_light)
             )
 
             inactiveColumnsColor = getColor(
                 R.styleable.SoundWaveEditorView_inactiveColumnsColor,
-                ContextCompat.getColor(context, android.R.color.darker_gray)
+                context.getColorCompat(android.R.color.darker_gray)
             )
 
             slideBarsColor = getColor(
                 R.styleable.SoundWaveEditorView_slideBarsColor,
-                ContextCompat.getColor(context, android.R.color.holo_red_light)
+                context.getColorCompat(android.R.color.holo_red_light)
             )
 
             maxVisibleColumnsCount = getInt(
@@ -300,6 +317,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             needToRoundColumns =
                 getBoolean(R.styleable.SoundWaveEditorView_needToRoundColumns, false)
 
+            needToShowTime =
+                getBoolean(R.styleable.SoundWaveEditorView_needToShowTime, false)
+
             columnSpacingRatio =
                 getFloat(R.styleable.SoundWaveEditorView_columnSpacingRatio, DEFAULT_COLUMNS_RATIO)
 
@@ -320,7 +340,25 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             textSize = timeTextSize
         }
 
-        scaleDetector = ScaleGestureDetector(context, this)
+        scaleDetector = ScaleGestureDetector(context, object : SimpleScaleListener() {
+            override fun onScaleBegin(scaleDetector: ScaleGestureDetector?) =
+                (scaleDetector?.let { it.currentSpanX > it.currentSpanY } ?: false).also {
+                    isScaling = it
+                }
+
+            override fun onScale(scaleDetector: ScaleGestureDetector?) = scaleDetector?.let { detector ->
+                (currentVisibleColumnsCount / detector.scaleFactor.absoluteValue).toInt().takeIf {
+                    firstVisibleColumn + it <= columns.size
+                }?.let {
+                    currentVisibleColumnsCount = it
+
+                    getWidthAndSpacing()
+                    invalidate()
+
+                    true
+                }
+            } ?: false
+        })
     }
 
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
@@ -345,15 +383,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             ?.forEachIndexed { index, column ->
                 var isSlideBar = false
 
-                when (index) {
-                    in leftSlideBar + 1 until rightSlideBar -> activeColumnsPaint
-                    leftSlideBar, rightSlideBar -> slideBarPaint.apply { isSlideBar = true }
-                    else -> {
-                        if (index + firstVisibleColumn == playingPosition) {
-                            slideBarPaint.apply { isSlideBar = true }
-                        } else {
-                            inactiveColumnsPaint
-                        }
+                when {
+                    index + firstVisibleColumn == playingPosition -> playBarColumnPaint.apply { isSlideBar = true }
+                    index in leftSlideBar + 1 until rightSlideBar -> activeColumnsPaint
+                    else -> if (index == leftSlideBar || index == rightSlideBar) {
+                        slideBarPaint.apply { isSlideBar = true }
+                    } else {
+                        inactiveColumnsPaint
                     }
                 }.let { paint ->
                     val leftColumnSide = index * (columnWidth + spacingBetweenColumns)
@@ -371,9 +407,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     }
                 }
             }
-
-        getTimeAndPosition(leftSlideBar) { text, x, y -> drawText(text, x, y, timeTextPaint) }
-        getTimeAndPosition(rightSlideBar) { text, x, y -> drawText(text, x, y, timeTextPaint) }
+        if (needToShowTime) {
+            setOf(playingPosition - firstVisibleColumn, leftSlideBar, rightSlideBar).forEach {
+                getTimeAndPosition(it) { text, x, y -> drawText(text, x, y, timeTextPaint) }
+            }
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -424,282 +462,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         return eventResult
     }
-
-    override fun onScaleBegin(scaleDetector: ScaleGestureDetector?) =
-        (scaleDetector?.let { it.currentSpanX > it.currentSpanY } ?: false).also { isScaling = it }
-
-    // TODO create simple scale listener
-    override fun onScaleEnd(scaleDetector: ScaleGestureDetector?) = Unit
-
-    private var scaleAnimator: ValueAnimator? = null
-
-    // TODO optimize this shitty implementation
-    private fun centerScale(from: Int, to: Int, animDuration: Long) {
-        scaleAnimator = ValueAnimator.ofInt(from, to).apply {
-            duration = animDuration
-
-            addUpdateListener {
-                it.animatedValue.takeIfType<Int> { value ->
-                    firstVisibleColumn = value
-                }
-            }
-
-            start()
-        }
-    }
-
-    // TODO impl this to save view state
-//    override fun onSaveInstanceState() = Bundle().apply {
-//        putParcelable(SUPER_STATE, super.onSaveInstanceState())
-//        putParcelable( IntRange)
-
-//        private var scaleDetector: ScaleGestureDetector
-//
-//        private val histogramTopPaddingRatioRange = 0F..2F
-//        private val verticalPaddingRatioRange = 0F..0.5F
-//        private val columnsRatioRange = 0F..1F
-//
-//        private var histogramTopPadding = DEFAULT_HISTOGRAM_TOP_PADDING
-//        private var halfOfHistogramTopPadding = DEFAULT_HISTOGRAM_TOP_PADDING
-//        private var spacingBetweenColumns = DEFAULT_COLUMNS_RATIO
-//        private var columnWidth = DEFAULT_COLUMNS_RATIO
-//        private var columnRadius = ZERO_SIZE_F
-//
-//        private var fWidth = ZERO_SIZE_F
-//        private var fHeight = ZERO_SIZE_F
-//
-//        private var histogramYAxis = ZERO_SIZE_F
-//        private var histogramHeight = ZERO_SIZE_F
-//
-//        private var position = 0F
-//        private var movin = NO_MOVE
-//        private var isScaling = false
-//
-//        private var histogramBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-//
-//        private var inactiveColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-//
-//        private var activeColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-//
-//        private var slideBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-//
-//        private var timeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill().apply {
-//            textSize = DEFAULT_TIME_TEXT_SIZE
-//        }
-//
-//        private var histogramBackgroundRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
-//
-//        private val drawingRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
-//
-//        private val textRect = Rect(ZERO_SIZE, ZERO_SIZE, ZERO_SIZE, ZERO_SIZE)
-//
-//        private val columns = mutableListOf<ColumnSize>()
-//
-//        // TODO incapsulate all fields
-//        var timeTextSize = DEFAULT_TIME_TEXT_SIZE
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            field = it
-//            timeTextPaint.textSize = it
-//        }
-//
-//        var timeTextColor = android.R.color.black
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            field = it
-//            timeTextPaint.color = it
-//        }
-//
-//        var histogramBackgroundColor = android.R.color.transparent
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            field = it
-//            histogramBackgroundPaint.color = it
-//        }
-//
-//        var inactiveColumnsColor = android.R.color.darker_gray
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            field = it
-//            inactiveColumnsPaint.color = it
-//        }
-//
-//        var activeColumnsColor = android.R.color.holo_red_light
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            field = it
-//            activeColumnsPaint.color = it
-//        }
-//
-//        var slideBarsColor = android.R.color.holo_red_light
-//        set(value) = field.getIfNewAndInvalidate(value) {
-//            field = it
-//            slideBarPaint.color = it
-//        }
-//
-//        var maxVisibleColumnsCount = DEFAULT_MAX_COLUMNS_COUNT
-//        set(value) = field.getIfAndInvalidate(value, { value >= currentVisibleColumnsCount }, {
-//            field = it
-//        })
-//
-//        var minVisibleColumnsCount = DEFAULT_MIN_COLUMNS_COUNT
-//        set(value) = field.getIfAndInvalidate(value, { value < currentVisibleColumnsCount }, {
-//            field = it
-//        })
-//
-//        var currentVisibleColumnsCount = DEFAULT_COLUMNS_COUNT
-//        set(value) = field.getIfAndInvalidate(
-//            value, { value in (minVisibleColumnsCount + 1) until maxVisibleColumnsCount }, { field = it })
-//
-//        var distanceBetweenSlideBarsInColumns = DEFAULT_SLIDE_BARS_PADDING
-//        set(value) = field.getIfAndInvalidate(value, { value in 1 until currentVisibleColumnsCount }, {
-//            field = it
-//        })
-//
-//        var soundDuration = ZERO_SIZE_L
-//        set(value) = field.getIfAndInvalidate(value, { value > 0L }, { field = it })
-//
-//        var needToRoundColumns = false
-//        set(value) = field.getIfNewAndInvalidate(value) { field = it }
-//
-//        var histogramTopPaddingRatio = DEFAULT_HISTOGRAM_TOP_PADDING
-//        set(value) = field.getIfAndInvalidate(value, { value in histogramTopPaddingRatioRange }, {
-//            field = it
-//        })
-//
-//        var columnSpacingRatio = DEFAULT_COLUMNS_RATIO
-//        set(value) = field.getIfAndInvalidate(value, { value in columnsRatioRange }, { field = it })
-//
-//        var columnVerticalPaddingRatio = DEFAULT_VERTICAL_PADDING_RATIO
-//        set(value) = field.getIfAndInvalidate(value, { value in verticalPaddingRatioRange }, {
-//            field = it
-//        })
-//
-//        var firstVisibleColumn = ZERO_SIZE
-//        set(value) = field.getIfAndInvalidate(value, {
-//            value in 0..columnBytes.size - currentVisibleColumnsCount
-//        }) { field = it }
-//
-//        // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
-//        var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
-//        set(value) = field.getIfAndInvalidate(value, {
-//            value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - distanceBetweenSlideBarsInColumns
-//        }) { field = it }
-//
-//        // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
-//        var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
-//        set(value) = field.getIfAndInvalidate(value, {
-//            value in leftSlideBar + distanceBetweenSlideBarsInColumns - 1 until currentVisibleColumnsCount - DEFAULT_SLIDE_BARS_PADDING
-//        }) {
-//            field = when (it == currentVisibleColumnsCount) {
-//                true -> it - 1
-//                false -> it
-//            }
-//        }
-//
-//        var minTrimLengthInSeconds = DEFAULT_MIN_TRIM_LENGTH_IN_SEC
-//        set(value) = field.getIfAndInvalidate(value, {
-//            value in 1 until maxTrimLengthInSeconds
-//        }) { field = it }
-//
-//        var maxTrimLengthInSeconds = DEFAULT_MAX_TRIM_LENGTH_IN_SEC
-//        set(value) = field.getIfAndInvalidate(value, {
-//            value in (minTrimLengthInSeconds + 1) until soundDuration
-//        }) { field = it }
-//
-//        var columnBytes = mutableListOf<UByte>()
-//        set(value) = field.getIfNewAndInvalidate(value) { field = it }
-//
-//        var fileName: String? = null
-//        set(value) = field.getIfNew(value) {
-//            it?.let { file -> processAudioFile(file) }
-//            field = it
-//        }
-//
-//        var soundFile: CheapSoundFile? = null
-//        set(value) = field.getIfNew(value) { field = it }
-//
-//        var soundData: SoundData? = null
-//        set(value) = field.getIfNew(value) { field = it }
-//
-//        var currentPlayTimeMs = 0L
-//        set(value) = field.getIfNew(value) {
-//            field = it
-//            playingPosition = (it * columnBytes.size / soundDuration).toInt()
-//        }
-//
-//        private var playingPosition = ZERO_SIZE
-//        set(value) {
-//            field = value
-//            invalidate()
-//        }
-//
-//        // TODO replace this callback by interface
-//        val updatingCallback = { time: Long ->
-//            Log.e("UPD TIME", "$time")
-//
-//            // TODO replace by 100L
-//            currentPlayTimeMs += time
-//        }
-
-//    }
-
-    // TODO and this
-    override fun onRestoreInstanceState(state: Parcelable?) {
-        super.onRestoreInstanceState(state)
-
-
-    }
-
-    private inline fun <reified T> Any?.takeIfType(onCasted: (T) -> Unit): Any? {
-        if (this is T) onCasted(this as T)
-
-        return this
-    }
-
-    override fun onScale(scaleDetector: ScaleGestureDetector?): Boolean {
-        var result = false
-
-//        val oldFirstVisible = firstVisibleColumn
-//        val oldVisibleColumnsCount = currentVisibleColumnsCount
-
-        // TODO fix non-scaling state
-
-
-
-        scaleDetector?.let { detector ->
-            (currentVisibleColumnsCount / detector.scaleFactor.absoluteValue).toInt().takeIf {
-                firstVisibleColumn + it <= columns.size
-            }?.let {
-                currentVisibleColumnsCount = it
-
-                getWidthAndSpacing()
-                invalidate()
-
-                result = true
-            }
-
-//            if (firstVisibleColumn + currentVisibleColumnsCount <= columns.size - 10) {
-//                currentVisibleColumnsCount = (currentVisibleColumnsCount / detector.scaleFactor.absoluteValue).toInt()
-//                getWidthAndSpacing()
-//                invalidate()
-//
-//                result = true
-//            }
-
-//            if (scaleAnimator?.isRunning != true) {
-//                val newCenter = (it.focusX / (columnWidth + spacingBetweenColumns)).toInt()
-//                val oldCenter = oldFirstVisible + oldVisibleColumnsCount / 2
-//
-//                val newFirstVisible = when (oldFirstVisible + newCenter > oldCenter) {
-//                    true -> oldFirstVisible + (oldVisibleColumnsCount / 2 + newCenter)
-//                    false -> oldFirstVisible - (oldVisibleColumnsCount / 2 - newCenter)
-//                }
-//
-//                centerScale(oldFirstVisible, newFirstVisible, 100L)
-//            }
-        }
-
-        return result
-    }
-
-    // TODO remove later
-    var loadedCallback: ((Boolean) -> Unit)? = null
 
     // TODO user must give external/internal storage saving variant and new file path
     // TODO so, refactor fun below ->
@@ -824,11 +586,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         spacingBetweenColumns = columnWidth * columnSpacingRatio
     }
 
-    // TODO To vals
-    var loadingKeepGoing = false
-    var loadingProgress = 0
-    var numFramesSF = 0
-
     private fun processAudioFile(fileName: String) {
         val path = File(fileName).absolutePath
 
@@ -839,6 +596,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         soundFile = CheapSoundFile.create(path, object : CheapSoundFile.Companion.ProgressListener {
             override fun reportProgress(fractionComplete: Double): Boolean {
                 val now = System.currentTimeMillis()
+
                 if (now - loadingLastUpdateTime > 100) {
                     loadingProgress = (100 * fractionComplete).toInt()
 
@@ -848,7 +606,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 return loadingKeepGoing
             }
         })
-
 
         val level = mutableListOf<UByte>()
 
@@ -873,14 +630,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 maxVisibleColumnsCount = columnBytes.size / 5
                 currentVisibleColumnsCount = columnBytes.size / 5 - 100
                 minVisibleColumnsCount = 200
-
-                Log.e("COLUMN BYTES", "${columnBytes.size}")
             }
 
             SongMetadataReader(WeakReference(context), path).run {
-                soundData = SoundData(
-                    path, title, artist, album, year, fileType, sampleRate, avgBitrateKbps
-                )
+                soundData = SoundData(path, title, artist, album, year, fileType, sampleRate, avgBitrateKbps)
             }
 
             updatePeriod = getUpdatePeriod()
@@ -888,8 +641,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             loadedCallback?.invoke(true)
         }
     }
-
-    var updatePeriod: Long? = 0L
 
     private fun getUpdatePeriod() =
         soundDuration / (columnBytes.size.takeIf { it != ZERO_SIZE } ?: 1)
@@ -940,8 +691,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun getGain(i: Int, numFrames: Int, frameGains: IntArray): Float {
         val x = min(i, numFrames - 1)
 
-        Log.e("GAIN", "$x, $i, ${numFrames - 1}")
-
         return if (numFrames < 2) {
             frameGains[x].toFloat()
         } else {
@@ -956,7 +705,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun Paint.styleFill() = apply { style = Paint.Style.FILL }
 
     private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
-        value?.takeIf { this != it && predicate() }?.let { receiver(it) } ?: Unit
+        value?.takeIf { this != it && predicate() }?.let {
+            receiver(it)
+        } ?: Unit
 
     private fun <T> T.getIfAndInvalidate(value: T?, predicate: () -> Boolean, receiver: (T) -> Unit) =
         value?.takeIf { this != it && predicate() }?.let {
@@ -983,5 +734,3 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private data class ColumnSize(var top: Float, var bottom: Float)
 }
-
-

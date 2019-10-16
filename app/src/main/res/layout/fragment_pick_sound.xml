@@ -17,9 +17,11 @@
         app:columnSpacingRatio="0.0"
         app:histogramBackground="@color/colorLightGray"
         app:inactiveColumnsColor="@color/colorGray"
+        app:playBarColor="@color/colorAccent"
         app:slideBarsPaddingInColumns="10"
         app:needToRoundColumns="true"
         app:slideBarsColor="@color/colorRed"
+        app:needToShowTime="true"
         android:visibility="gone"/>
 
     <TextView
