@@ -1,5 +1,7 @@
 package com.example.soundwaveeditor.ui.screens.main
 
+import android.os.Bundle
+import android.util.Log
 import com.example.soundwaveeditor.R
 import com.example.soundwaveeditor.ui.screens.base.BaseLifecycleActivity
 import com.example.soundwaveeditor.ui.screens.picksound.PickSoundFragment
@@ -17,8 +19,12 @@ class MainActivity : BaseLifecycleActivity<MainViewModel>(LAYOUT_ID) {
 
     override fun observeLiveData() = Unit
 
-    override fun onResume() {
-        super.onResume()
-        replaceFragment(PickSoundFragment.getInstance(), false)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        if (savedInstanceState == null) {
+            replaceFragment(newFragmentInstance<PickSoundFragment>(), false)
+            Log.e("MAIN ACTIVITY", "fragment replaced")
+        }
     }
 }

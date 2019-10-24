@@ -10,50 +10,86 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.example.soundwaveeditor.R
-import com.example.soundwaveeditor.extensions.setVisibility
-import com.example.soundwaveeditor.ui.screens.base.BaseFragment
-import kotlinx.android.synthetic.main.fragment_pick_sound.*
 import android.util.Log
+import androidx.lifecycle.Observer
+import com.example.soundwaveeditor.extensions.setClickListeners
+import com.example.soundwaveeditor.extensions.setVisibility
+import com.example.soundwaveeditor.ui.screens.base.BaseLifecycleFragment
 import com.tbruyelle.rxpermissions2.RxPermissions
 import io.reactivex.Flowable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
+import kotlinx.android.synthetic.main.fragment_pick_sound.*
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 
 @Suppress("SameParameterValue")
 @ExperimentalUnsignedTypes
-class PickSoundFragment : BaseFragment(LAYOUT_ID) {
+class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnClickListener {
 
-    companion object {
-        private const val LAYOUT_ID = R.layout.fragment_pick_sound
-
-        fun getInstance(args: Bundle? = null) = PickSoundFragment().apply {
-            args?.let { arguments = args }
-        }
-    }
+    override val viewModelClass = PickSoundViewModel::class.java
+    override val layoutId = R.layout.fragment_pick_sound
+    override val toolbarId = -1
+    override val toolbarTitleId = -1
+    override val backNavId = -1
+    override val isHaveToolbar = false
 
     private var rxPermissions: Disposable? = null
+
+    override fun observeLiveData() {
+        viewModel.errorLiveData.observe(this, Observer {
+            logE("error occurred, ${it.toString()}")
+        })
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        rxPermissions = RxPermissions(this)
-            .request(Manifest.permission.READ_EXTERNAL_STORAGE)
-            .subscribe { granted ->
-                if (granted) {
-                    comeOn()
-                } else {
-                    Toast.makeText(context, "Permission denied!", Toast.LENGTH_SHORT).show()
+        if (savedInstanceState == null) {
+            rxPermissions = RxPermissions(this)
+                .request(Manifest.permission.READ_EXTERNAL_STORAGE)
+                .subscribe { granted ->
+                    if (granted) {
+                        comeOn()
+                    } else {
+                        Toast.makeText(context, "Permission denied!", Toast.LENGTH_SHORT).show()
+                    }
                 }
-            }
+
+            setClickListeners(bPlay, bPause, bStop)
+        }
+
+        logE("onViewCreated")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        logE("onStop")
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+
+        logE("onDestroyView")
+
         rxPermissions?.dispose()
+    }
+
+    // TODO remove later
+    private fun logE(message: String) {
+        Log.e("PICK SOUND FR", message)
+    }
+
+    override fun onClick(view: View?) {
+        view?.id?.let {
+            when (it) {
+                R.id.bPlay -> {}
+                R.id.bPause -> {}
+                R.id.bStop -> {}
+            }
+        }
     }
 
     private fun comeOn() {
@@ -62,22 +98,17 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                 vSoundEditor.setVisibility(true)
                 drawHistogram()
                 // TODO refactor this
-                bTrim.setOnClickListener {
-                    vSoundEditor.trimAudio()
-                }
-            },
-            R.string.dialog_cancel, {
-                Toast.makeText(context, "Cancel", Toast.LENGTH_SHORT).show()
-            })
+                bTrim.setOnClickListener { vSoundEditor.trimAudio() }
+            }, R.string.dialog_cancel) { Toast.makeText(context, "Cancel", Toast.LENGTH_SHORT).show() }
     }
 
-    private fun showAlert(message: CharSequence, dialogTitle: CharSequence?, cancelable: Boolean, positiveRes: Int?,
-                          positiveFun: () -> Unit, negativeRes: Int?, negativeFun: () -> Unit) {
+    override fun showAlert(message: CharSequence, title: CharSequence?, cancelable: Boolean, positiveRes: Int?,
+                                   positiveFun: () -> Unit, negativeRes: Int?, negativeFun: () -> Unit) {
         context?.let {
             AlertDialog.Builder(it).apply {
                 setMessage(message)
                 setCancelable(cancelable)
-                dialogTitle?.let { title -> setTitle(title) }
+                title?.let { title -> setTitle(title) }
                 setPositiveButton(positiveRes?.let { pos -> pos } ?: R.string.dialog_ok) { _, _ -> positiveFun() }
                 negativeRes?.let { neg -> setNegativeButton(neg) { _, _ -> negativeFun() } }
                 show()
@@ -117,13 +148,6 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
 //            maxVisibleColumnsCount = 1_800
 //            currentVisibleColumnsCount = 700
 
-            // OK
-            firstVisibleColumn = 0
-
-            // TODO place in center? (need to talk about it)
-            rightSlideBar = 150
-            leftSlideBar = 50
-
             loadedCallback = {
                 soundData?.let { sd ->
                     sd.averageBitrate?.let { tvBitrate.text = "Average bitrate: $it kbps" }
@@ -152,7 +176,7 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                 }
 
                 player?.setOnPreparedListener { p ->
-                    player?.start()
+                    p.start()
 
                     Log.e("PREPARED", "ok")
 
@@ -165,7 +189,7 @@ class PickSoundFragment : BaseFragment(LAYOUT_ID) {
                     updatePeriod?.let {
                         Flowable
                             .interval(it, TimeUnit.MILLISECONDS)
-                            .takeWhile { player?.isPlaying ?: false }
+                            .takeWhile { p.isPlaying }
                             .timeInterval()
                             .onBackpressureLatest()
                             .subscribeOn(Schedulers.computation())

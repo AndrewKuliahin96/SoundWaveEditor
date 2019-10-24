@@ -33,19 +33,20 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_TIME_TEXT_SIZE = 14F
         private const val DEFAULT_COLUMNS_RATIO = 1F
         private const val ZERO_SIZE_F = 0F
-        private const val ZERO_SIZE = 0
         private const val ZERO_SIZE_L = 0L
-        private const val DEFAULT_MAX_TRIM_LENGTH_IN_SEC = 10
-        private const val DEFAULT_MIN_TRIM_LENGTH_IN_SEC = 0
+        private const val ZERO_SIZE = 0
+        private const val DEFAULT_MAX_TRIM_LENGTH_IN_SEC = 15
+        private const val DEFAULT_MIN_TRIM_LENGTH_IN_SEC = 5
+        private const val DEFAULT_FIXED_CHUNKS_STRATEGY = 10
         private const val DEFAULT_SLIDE_BARS_PADDING = 10
         private const val DEFAULT_MAX_COLUMNS_COUNT = 500
         private const val DEFAULT_MIN_COLUMNS_COUNT = 100
         private const val DEFAULT_COLUMNS_COUNT = 300
-        private const val NO_MOVE = -1
-        private const val MOVE_SLIDE = 2
-        private const val MOVE_LEFT = 4
-        private const val MOVE_RIGHT = 8
         private const val MOVE_CENTER = 16
+        private const val MOVE_RIGHT = 8
+        private const val MOVE_LEFT = 4
+        private const val MOVE_SLIDE = 2
+        private const val NO_MOVE = -1
     }
 
     private val scaleDetector: ScaleGestureDetector
@@ -71,29 +72,27 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var movin = NO_MOVE
     private var isScaling = false
 
-    private var histogramBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-
-    private var inactiveColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-
-    private var activeColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-
-    private var playBarColumnPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-
-    private var slideBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
-
-    private var timeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill().apply {
+    private val histogramBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
+    private val inactiveColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
+    private val activeColumnsPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
+    private val playBarColumnPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
+    private val slideBarPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill()
+    private val timeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).styleFill().apply {
         textSize = DEFAULT_TIME_TEXT_SIZE
     }
 
     private var histogramBackgroundRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
-
     private val drawingRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
 
     private val textRect = Rect(ZERO_SIZE, ZERO_SIZE, ZERO_SIZE, ZERO_SIZE)
 
     private val columns = mutableListOf<ColumnSize>()
 
-    // TODO incapsulate all fields
+    val chunkGroupingStrategy = ChunkGroupingStrategy.GROUPING_AVERAGE
+    val chunkingStrategy = ChunkingStrategy.CHUNKING_AUTO
+
+    var fixedChunksStrategy = DEFAULT_FIXED_CHUNKS_STRATEGY
+
     var timeTextSize = DEFAULT_TIME_TEXT_SIZE
         set(value) = field.getIfNewAndInvalidate(value) {
             field = it
@@ -137,26 +136,28 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
 
     var maxVisibleColumnsCount = DEFAULT_MAX_COLUMNS_COUNT
-        set(value) = field.getIfAndInvalidate(value, { value >= currentVisibleColumnsCount }, {
+        set(value) = field.getIfAndInvalidate(value, { value >= currentVisibleColumnsCount }) {
             field = it
-        })
+        }
 
     var minVisibleColumnsCount = DEFAULT_MIN_COLUMNS_COUNT
-        set(value) = field.getIfAndInvalidate(value, { value < currentVisibleColumnsCount }, {
+        set(value) = field.getIfAndInvalidate(value, { value < currentVisibleColumnsCount }) {
             field = it
-        })
+        }
 
     var currentVisibleColumnsCount = DEFAULT_COLUMNS_COUNT
         set(value) = field.getIfAndInvalidate(
-            value, { value in (minVisibleColumnsCount + 1) until maxVisibleColumnsCount }, { field = it })
+            value, { value in (minVisibleColumnsCount + 1) until maxVisibleColumnsCount }) {
+            field = it
+        }
 
     var distanceBetweenSlideBarsInColumns = DEFAULT_SLIDE_BARS_PADDING
-        set(value) = field.getIfAndInvalidate(value, { value in 1 until currentVisibleColumnsCount }, {
+        set(value) = field.getIfAndInvalidate(value, { value in 1 until currentVisibleColumnsCount }) {
             field = it
-        })
+        }
 
     var soundDuration = ZERO_SIZE_L
-        set(value) = field.getIfAndInvalidate(value, { value > 0L }, { field = it })
+        set(value) = field.getIfAndInvalidate(value, { value > 0L }) { field = it }
 
     var needToRoundColumns = false
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
@@ -165,32 +166,40 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     var histogramTopPaddingRatio = DEFAULT_HISTOGRAM_TOP_PADDING
-        set(value) = field.getIfAndInvalidate(value, { value in histogramTopPaddingRatioRange }, {
+        set(value) = field.getIfAndInvalidate(value, { value in histogramTopPaddingRatioRange }) {
             field = it
-        })
+        }
 
     var columnSpacingRatio = DEFAULT_COLUMNS_RATIO
-        set(value) = field.getIfAndInvalidate(value, { value in columnsRatioRange }, { field = it })
+        set(value) = field.getIfAndInvalidate(value, { value in columnsRatioRange }) { field = it }
 
     var columnVerticalPaddingRatio = DEFAULT_VERTICAL_PADDING_RATIO
-        set(value) = field.getIfAndInvalidate(value, { value in verticalPaddingRatioRange }, {
+        set(value) = field.getIfAndInvalidate(value, { value in verticalPaddingRatioRange }) {
             field = it
-        })
+        }
 
     var firstVisibleColumn = ZERO_SIZE
         set(value) = field.getIfAndInvalidate(value, {
             value in 0..columnBytes.size - currentVisibleColumnsCount
         }) { field = it }
 
-    // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
     var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
+
+            // TODO this is not working, FIX IT
+            // TODO Upd. This shit is not working, because by default positions are not in range +
+            // TODO position here is calculating by screen fill
+            checkLeftUpdatingPosition(value) &&
+
+//            isPositionsInTimeBounds() &&
             value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - distanceBetweenSlideBarsInColumns
         }) { field = it }
 
-    // TODO add processing for variant when rightSlideBar - leftSlideBar !in minTrimSize..maxTrimSize
     var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
+            checkRightUpdatingPosition(value) &&
+
+//            isPositionsInTimeBounds() &&
             value in leftSlideBar + distanceBetweenSlideBarsInColumns - 1 until currentVisibleColumnsCount - DEFAULT_SLIDE_BARS_PADDING
         }) {
             field = when (it == currentVisibleColumnsCount) {
@@ -199,18 +208,27 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             }
         }
 
+    // TODO impl with bounding stripes
     var minTrimLengthInSeconds = DEFAULT_MIN_TRIM_LENGTH_IN_SEC
-        set(value) = field.getIfAndInvalidate(value, {
-            value in 1 until maxTrimLengthInSeconds
-        }) { field = it }
+        set(value) = field.getIfAndInvalidate(value, { value in 1 until maxTrimLengthInSeconds }) {
+            field = it
+        }
 
+    // TODO impl with bounding stripes
     var maxTrimLengthInSeconds = DEFAULT_MAX_TRIM_LENGTH_IN_SEC
         set(value) = field.getIfAndInvalidate(value, {
             value in (minTrimLengthInSeconds + 1) until soundDuration
         }) { field = it }
 
     var columnBytes = mutableListOf<UByte>()
-        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+        set(value) = field.getIfNewAndInvalidate(value) {
+            field = it
+
+            // TODO test and remove if needed
+//            while (!isPositionsInTimeBounds()) {
+//                rightSlideBar++
+//            }
+        }
 
     var fileName: String? = null
         set(value) = field.getIfNew(value) {
@@ -410,6 +428,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     }
                 }
             }
+
         if (needToShowTime) {
             setOf(playingPosition - firstVisibleColumn, leftSlideBar, rightSlideBar).forEach {
                 getTimeAndPosition(it) { text, x, y -> drawText(text, x, y, timeTextPaint) }
@@ -483,8 +502,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     fun trimAudio() {
         thread {
             fileName?.split("/")?.last()?.dropLastWhile { it != '.' }?.let { title ->
-                Log.e("TRIM AUDIO", "created temp, $title")
-
                 makeSoundFileName(
                     "$title (trimmed)",
                     ".${soundFile?.fileType?.toLowerCase(Locale.getDefault()) ?: "m4a"}")?.let { sfName ->
@@ -507,9 +524,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private fun makeSoundFileName(title: String?, extension: String) =
         context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.path?.let {
-            val file = File( if (!it.endsWith("/")) "$it/" else it)
-
-            file.mkdirs()
+            File( if (it.endsWith("/")) it else "$it/").mkdirs()
 
             val fileName = StringBuilder()
 
@@ -634,14 +649,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     level.add((calculateHeight(i, it.first, it.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
                 }
 
-                // TODO avg of 10 frames will be drawn on view
-                columnBytes = level.chunked(10).map { list -> list.map { mapped -> mapped.toInt() }.average() }.map { it.toUInt().toUByte() }.toMutableList()
+                columnBytes = when (chunkingStrategy) {
+                    ChunkingStrategy.CHUNKING_FIXED -> level.chunkedUBytes(fixedChunksStrategy)
+                    ChunkingStrategy.CHUNKING_AUTO -> level.chunkedUBytes(level.size / 1_000)
+                    ChunkingStrategy.CHUNKING_NONE -> level
+                }
 
-                // TODO every frame will be drawn on view
-                // TODO this may slow drawing speed
-
-//                columnBytes = level
-
+                // TODO bind column counts with chunked strategy
                 maxVisibleColumnsCount = columnBytes.size / 5
                 currentVisibleColumnsCount = columnBytes.size / 5 - 100
                 minVisibleColumnsCount = 200
@@ -651,13 +665,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 soundData = SoundData(path, title, artist, album, year, fileType, sampleRate, avgBitrateKbps)
             }
 
-            updatePeriod = getUpdatePeriod()
+            updatePeriod = getUpdatingPeriod()
 
             loadedCallback?.invoke(true)
         }
     }
 
-    private fun getUpdatePeriod() =
+    private fun getUpdatingPeriod() =
         soundDuration / (columnBytes.size.takeIf { it != ZERO_SIZE } ?: 1)
 
     private fun getMinMax(): Pair<Float, Float>? {
@@ -717,6 +731,32 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
+    // TODO here is time range bounding
+    private fun isPositionsInTimeBounds() =
+        (getPositionTime(rightSlideBar) - getPositionTime(leftSlideBar)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds
+
+    private fun checkLeftUpdatingPosition(position: Int) =
+        ((getPositionTime(rightSlideBar) - getPositionTime(position)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds).apply {
+            Log.e("CHECK POSITION", "left, is $this")
+        }
+
+    private fun checkRightUpdatingPosition(position: Int) =
+        ((getPositionTime(position) - getPositionTime(leftSlideBar)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds).apply {
+            Log.e("CHECK POSITION", "right, is $this")
+        }
+
+    private fun MutableList<UByte>.chunkedUBytes(chunkSize: Int) =
+        chunked(chunkSize)
+            .map { list -> list.map { mapped -> mapped.toInt() }.group() }
+            .map { average -> average.toUInt().toUByte() }
+            .toMutableList()
+
+    private fun Iterable<Int>.group(): Double = when (chunkGroupingStrategy) {
+        ChunkGroupingStrategy.GROUPING_MIN -> min()?.toDouble() ?: first().toDouble()
+        ChunkGroupingStrategy.GROUPING_MAX -> max()?.toDouble() ?: first().toDouble()
+        ChunkGroupingStrategy.GROUPING_AVERAGE -> average()
+    }
+
     private fun Paint.styleFill() = apply { style = Paint.Style.FILL }
 
     private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
@@ -747,5 +787,86 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         val averageBitrate: Int? = null
     )
 
-    private data class ColumnSize(var top: Float, var bottom: Float)
+    data class ColumnSize(var top: Float, var bottom: Float)
+
+    enum class ChunkingStrategy(val strategy: Int) {
+        CHUNKING_FIXED(12),
+        CHUNKING_AUTO(24),
+        CHUNKING_NONE(36);
+
+        companion object {
+            fun byValue(value: Int?) =
+                values().firstOrNull { value == it.strategy } ?: CHUNKING_AUTO
+        }
+
+        operator fun invoke() = strategy
+    }
+
+    enum class ChunkGroupingStrategy(val strategy: Int) {
+        GROUPING_MIN(11),
+        GROUPING_MAX(21),
+        GROUPING_AVERAGE(31);
+
+        companion object {
+            fun byValue(value: Int?) =
+                values().firstOrNull { value == it.strategy } ?: GROUPING_AVERAGE
+        }
+
+        operator fun invoke() = strategy
+    }
+
+    // TODO use it to save view model state
+//    interface Model : Parcelable
+//
+//    interface ViewState : Model {
+//        var field: Long?
+//    }
+//
+//    @Parcelize
+//    data class SavingModel(
+//        var histogramTopPadding: Float,
+//        var halfOfHistogramTopPadding: Float,
+//        var spacingBetweenColumns: Float,
+//        var columnWidth: Float,
+//        var columnRadius: Float,
+//        var viewWidth: Float,
+//        var viewHeight: Float,
+//        var histogramYAxis: Float,
+//        var histogramHeight: Float,
+//        var backgroundColor: Int,
+//        var activeColumnsColor: Int,
+//        var inactiveColumnsColor: Int,
+//        var playBarColumnColor: Int,
+//        var slideBarColor: Int,
+//        var timeTextColor: Int,
+//        var histogramBackgroundRectF: RectF,
+//        var drawingRectF: RectF,
+//        var textRect: RectF,
+//        var columns: MutableList<ColumnSize>,
+//        var timeTextSize: Float,
+//        var histogramBackgroundColor: Float,
+//        var maxVisibleColumnsCount: Int,
+//        var minVisibleColumnsCount: Int,
+//        var currentVisibleColumnsCount: Int,
+//        var distanceBetweenSlideBarsInColumns: Int,
+//        var soundDuration: Int,
+//        var needToRoundColumns: Boolean = false,
+//        var needToShowTime: Boolean = false,
+//        var histogramTopPaddingRatio: Float,
+//        var columnSpacingRatio: Float,
+//        var columnVerticalPaddingRatio: Float,
+//        var firstVisibleColumn: Int,
+//        var leftSlideBar: Int,
+//        var rightSlideBar: Int,
+//        var minTrimLengthInSeconds: Int,
+//        var maxTrimLengthInSeconds: Int,
+//        var columnBytes: MutableList<UByte>,
+//        var fileName: String?,
+//        var soundFile: CheapSoundFile?,
+//        var soundData: SoundData?,
+//        var currentPlayTimeMs: Long,
+//        var playingPosition: Int,
+//        var updatePeriod: Long?,
+//        var numFramesSF: Int,
+//        var chunkingStrategy: Int) : ViewState
 }

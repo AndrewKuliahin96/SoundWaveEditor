@@ -11,6 +11,7 @@ private var blockKeyboardListener: Boolean = true
 private const val ALPHA_ENABLED = 1.0f
 private const val ALPHA_DISABLED = 0.5f
 
+
 fun View.OnClickListener.setClickListeners(vararg views: View) {
     views.forEach { view -> view.setOnClickListener(this) }
 }

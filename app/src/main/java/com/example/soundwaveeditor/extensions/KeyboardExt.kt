@@ -6,7 +6,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 
 
-internal val NO_FLAGS = 0
+internal const val NO_FLAGS = 0
 
 fun AppCompatActivity.hideKeyboard() = currentFocus?.let {
     (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).apply {
