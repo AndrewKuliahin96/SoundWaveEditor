@@ -193,7 +193,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
             // TODO add limitations check
 
-                    value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
+            value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
         }) { field = it }
 
     var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
@@ -201,7 +201,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
             // TODO add limitations check
 
-                    value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
+            value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
         }) { field = it }
 
     // TODO impl with bounding stripes
@@ -756,15 +756,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun <T : Comparable<T>> ClosedRange<T>.covers(start: T, end: T) =
         start in this || end in this
 
-    private fun <T : Comparable<T>> ClosedRange<T>.fullyCovers(start: T, end: T) =
-        start in this && end in this
-
-    private fun <T : Comparable<T>> ClosedRange<T>.covers(other: ClosedRange<T>) =
-        other.start in this || other.endInclusive in this
-
-    private fun <T : Comparable<T>> ClosedRange<T>.fullyCovers(other: ClosedRange<T>) =
-        other.start in this && other.endInclusive in this
-
     private fun Float.toDp() = context.pxToDp(this)
 
     private fun MutableList<UByte>.chunkedUBytes(chunkSize: Int) =
@@ -836,6 +827,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         operator fun invoke() = strategy
     }
+
+    // TODO create and test builder
+//    inner class Builder {
+//
+//        fun create(): RequiredBuilder {
+//
+//        }
+//
+//        fun build(): Opt or Required {
+//
+//        }
+//    }
 
     // TODO use it to save view model state
 //    interface Model : Parcelable
