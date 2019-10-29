@@ -22,6 +22,9 @@
         app:needToRoundColumns="true"
         app:slideBarsColor="@color/colorRed"
         app:needToShowTime="true"
+        app:minTrimLengthInSeconds="10"
+        app:maxTrimLengthInSeconds="25"
+        app:needToPlayInSlideBars="true"
         android:visibility="gone"/>
 
     <LinearLayout

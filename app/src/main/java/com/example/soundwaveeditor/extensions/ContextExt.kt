@@ -22,6 +22,10 @@ fun Context.getInteger(intRes: Int) = this.resources.getInteger(intRes)
 
 fun Fragment.showKeyboard() = activity?.showKeyboard()
 
+fun Context.dpToPx(dp: Float) = resources.displayMetrics.density * dp
+
+fun Context.pxToDp(px: Float) = px / resources.displayMetrics.density
+
 fun Context.showKeyboard() {
     (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.apply {
         toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)

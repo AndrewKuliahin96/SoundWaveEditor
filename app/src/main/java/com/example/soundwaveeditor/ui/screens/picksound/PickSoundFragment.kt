@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -126,11 +127,15 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
         vSoundEditor.apply {
 
             // Testing for audio formats cases
-            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
+//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
 //            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).mp3"      // OK
+//
 
-            // on Samsung ->
-//            val path = "/sdcard/Music/glad_valakas_mrwhite_-_vitas_(zf.fm).mp3"
+            val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                "/sdcard/Download/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"      // Samsung
+            } else {
+                "/storage/sdcard1/Music/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"  // xiaomi
+            }
 
             // TODO need to optimize WAVE files opening (now time === 2 sec in best case)
             // TODO also did it non-blocking to avoid ANR state
@@ -208,7 +213,6 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
                 player?.prepareAsync()
             }
 
-            // TODO get sound duration from audio soundfile, that we pass into view
             fileName = path
         }
     }

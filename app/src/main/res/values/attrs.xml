@@ -19,5 +19,6 @@
         <attr name="columnVerticalPaddingRatio" format="float"/>
         <attr name="histogramTopPaddingRatio" format="float"/>
         <attr name="needToShowTime" format="boolean"/>
+        <attr name="needToPlayInSlideBars" format="boolean"/>
     </declare-styleable>
 </resources>

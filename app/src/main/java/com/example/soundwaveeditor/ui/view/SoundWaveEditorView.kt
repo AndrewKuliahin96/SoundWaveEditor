@@ -11,6 +11,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import com.example.soundwaveeditor.R
 import com.example.soundwaveeditor.extensions.getColorCompat
+import com.example.soundwaveeditor.extensions.pxToDp
 import com.example.soundwaveeditor.soundfile.CheapSoundFile
 import com.example.soundwaveeditor.soundfile.SongMetadataReader
 import com.example.soundwaveeditor.utils.SimpleScaleListener
@@ -38,7 +39,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_MAX_TRIM_LENGTH_IN_SEC = 15
         private const val DEFAULT_MIN_TRIM_LENGTH_IN_SEC = 5
         private const val DEFAULT_FIXED_CHUNKS_STRATEGY = 10
-        private const val DEFAULT_SLIDE_BARS_PADDING = 10
+        private const val TOUCH_SQUARE_PLACEHOLDER_DP = 8F
+        private const val DEFAULT_SLIDE_BARS_PADDING = 50
         private const val DEFAULT_MAX_COLUMNS_COUNT = 500
         private const val DEFAULT_MIN_COLUMNS_COUNT = 100
         private const val DEFAULT_COLUMNS_COUNT = 300
@@ -54,7 +56,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
     private val columnsRatioRange = 0F..1F
-
+    private var zoomLevelCorrection = TOUCH_SQUARE_PLACEHOLDER_DP
     private var histogramTopPadding = DEFAULT_HISTOGRAM_TOP_PADDING
     private var halfOfHistogramTopPadding = DEFAULT_HISTOGRAM_TOP_PADDING
     private var spacingBetweenColumns = DEFAULT_COLUMNS_RATIO
@@ -165,6 +167,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var needToShowTime = false
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
+    var needToPlayInSlideBars = false
+        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+
     var histogramTopPaddingRatio = DEFAULT_HISTOGRAM_TOP_PADDING
         set(value) = field.getIfAndInvalidate(value, { value in histogramTopPaddingRatioRange }) {
             field = it
@@ -186,27 +191,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
 
-            // TODO this is not working, FIX IT
-            // TODO Upd. This shit is not working, because by default positions are not in range +
-            // TODO position here is calculating by screen fill
-            checkLeftUpdatingPosition(value) &&
+            // TODO add limitations check
 
-//            isPositionsInTimeBounds() &&
-            value in DEFAULT_SLIDE_BARS_PADDING..rightSlideBar - distanceBetweenSlideBarsInColumns
+                    value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
         }) { field = it }
 
     var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
-            checkRightUpdatingPosition(value) &&
 
-//            isPositionsInTimeBounds() &&
-            value in leftSlideBar + distanceBetweenSlideBarsInColumns - 1 until currentVisibleColumnsCount - DEFAULT_SLIDE_BARS_PADDING
-        }) {
-            field = when (it == currentVisibleColumnsCount) {
-                true -> it - 1
-                false -> it
-            }
-        }
+            // TODO add limitations check
+
+                    value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
+        }) { field = it }
 
     // TODO impl with bounding stripes
     var minTrimLengthInSeconds = DEFAULT_MIN_TRIM_LENGTH_IN_SEC
@@ -221,14 +217,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }) { field = it }
 
     var columnBytes = mutableListOf<UByte>()
-        set(value) = field.getIfNewAndInvalidate(value) {
-            field = it
-
-            // TODO test and remove if needed
-//            while (!isPositionsInTimeBounds()) {
-//                rightSlideBar++
-//            }
-        }
+        set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     var fileName: String? = null
         set(value) = field.getIfNew(value) {
@@ -341,6 +330,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             needToShowTime =
                 getBoolean(R.styleable.SoundWaveEditorView_needToShowTime, false)
 
+            needToPlayInSlideBars =
+                getBoolean(R.styleable.SoundWaveEditorView_needToPlayInSlideBars, false)
+
             columnSpacingRatio =
                 getFloat(R.styleable.SoundWaveEditorView_columnSpacingRatio, DEFAULT_COLUMNS_RATIO)
 
@@ -368,16 +360,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 }
 
             override fun onScale(scaleDetector: ScaleGestureDetector?) = scaleDetector?.let { detector ->
-                (currentVisibleColumnsCount / detector.scaleFactor.absoluteValue).toInt().takeIf {
-                    firstVisibleColumn + it <= columns.size
-                }?.let {
-                    currentVisibleColumnsCount = it
+                val newCurrentColumnsCount = (currentVisibleColumnsCount / detector.scaleFactor.absoluteValue).toInt()
 
-                    getWidthAndSpacing()
-                    invalidate()
-
-                    true
+                if (firstVisibleColumn + newCurrentColumnsCount > columns.size) {
+                    firstVisibleColumn += currentVisibleColumnsCount - newCurrentColumnsCount
                 }
+
+                currentVisibleColumnsCount = newCurrentColumnsCount
+
+                getWidthAndSpacing()
+                invalidate()
+
+                return true
             } ?: false
         })
     }
@@ -403,11 +397,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             ?.subList(firstVisibleColumn, lastVisibleItem)
             ?.forEachIndexed { index, column ->
                 var isSlideBar = false
+                val absoluteIndexPosition = index + firstVisibleColumn
 
-                when {
-                    index + firstVisibleColumn == playingPosition -> playBarColumnPaint.apply { isSlideBar = true }
-                    index in leftSlideBar + 1 until rightSlideBar -> activeColumnsPaint
-                    else -> if (index == leftSlideBar || index == rightSlideBar) {
+                when (absoluteIndexPosition) {
+                    playingPosition -> playBarColumnPaint.apply { isSlideBar = true }
+                    in leftSlideBar + 1 until rightSlideBar -> activeColumnsPaint
+                    else -> if (absoluteIndexPosition == leftSlideBar || absoluteIndexPosition == rightSlideBar) {
                         slideBarPaint.apply { isSlideBar = true }
                     } else {
                         inactiveColumnsPaint
@@ -430,7 +425,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             }
 
         if (needToShowTime) {
-            setOf(playingPosition - firstVisibleColumn, leftSlideBar, rightSlideBar).forEach {
+            setOf(playingPosition - firstVisibleColumn, leftSlideBar - firstVisibleColumn, rightSlideBar - firstVisibleColumn).forEach {
                 getTimeAndPosition(it) { text, x, y -> drawText(text, x, y, timeTextPaint) }
             }
         }
@@ -447,26 +442,39 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
 
         if (!isScaling) {
+            val columnWidthDp = columnWidth.toDp()
             val columnWidthAndSpacing = columnWidth + spacingBetweenColumns
-            val leftSlideBarPosition = leftSlideBar * columnWidthAndSpacing
-            val rightSlideBarPosition = rightSlideBar * columnWidthAndSpacing
+            val leftSlideBarPositionDp = ((leftSlideBar - firstVisibleColumn) * columnWidthAndSpacing).toDp()
+            val rightSlideBarPositionDp = ((rightSlideBar - firstVisibleColumn) * columnWidthAndSpacing).toDp()
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    movin = when (event.x) {
-                        in 0F..leftSlideBarPosition - 10F, in rightSlideBarPosition + 10F..fWidth -> MOVE_SLIDE
-                        in leftSlideBarPosition - 10F..leftSlideBarPosition + 10F -> MOVE_LEFT
-                        in rightSlideBarPosition - 10F..rightSlideBarPosition + 10F -> MOVE_RIGHT
-                        in leftSlideBarPosition + 10F..rightSlideBarPosition - 10F -> MOVE_CENTER
-                        else -> NO_MOVE
+                    val rawTapCoordinateXdP = event.x.toDp()
+
+                    movin = when (rawTapCoordinateXdP) {
+                        in 0F .. leftSlideBarPositionDp.minusCorrection(), in rightSlideBarPositionDp + columnWidthDp.plusCorrection() .. fWidth.toDp() -> MOVE_SLIDE
+                        in leftSlideBarPositionDp.plusCorrection() .. rightSlideBarPositionDp.minusCorrection() -> MOVE_CENTER
+                        else -> {
+                            val leftSlideBarDpRange =
+                                (leftSlideBarPositionDp.minusCorrection() .. leftSlideBarPositionDp + columnWidthDp.plusCorrection())
+
+                            val rightSlideBarDpRange =
+                                (rightSlideBarPositionDp.minusCorrection() .. rightSlideBarPositionDp + columnWidthDp.plusCorrection())
+
+                            when {
+                                leftSlideBarDpRange.covers(rawTapCoordinateXdP.minusCorrection(), rawTapCoordinateXdP.plusCorrection()) -> MOVE_LEFT
+                                rightSlideBarDpRange.covers(rawTapCoordinateXdP.minusCorrection(), rawTapCoordinateXdP.plusCorrection()) -> MOVE_RIGHT
+                                else -> NO_MOVE
+                            }
+                        }
                     }
 
-                    tapCoordinateX = event.x
+                    tapCoordinateX = rawTapCoordinateXdP
                     position = event.x
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    ((event.x - position) / (columnWidth + spacingBetweenColumns)).toInt().let {
+                    ((event.x - position) / columnWidthAndSpacing).toInt().let {
                         when (movin) {
                             MOVE_SLIDE -> firstVisibleColumn -= it
                             MOVE_LEFT -> leftSlideBar += it
@@ -482,8 +490,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    if (movin == NO_MOVE && tapCoordinateX == event.x) {
-                        (event.x / (columnWidth + spacingBetweenColumns) + firstVisibleColumn).toInt().let {
+                    val size = event.size * 100
+                    val actionUpDp = event.x.toDp()
+                    val isTap = tapCoordinateX in (actionUpDp - size .. actionUpDp + size)
+
+                    if (movin == NO_MOVE && isTap) {
+                        (event.x / columnWidthAndSpacing + firstVisibleColumn).toInt().let {
                             getPositionTime(it).let { seekPos ->
                                 seekingCallback?.invoke(seekPos.toInt())
                                 currentPlayTimeMs = seekPos
@@ -550,11 +562,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 var xPos =
                     position * columnWidth + position * spacingBetweenColumns + halfOfHistogramTopPadding
 
-                val rightSlideBarPos = rightSlideBar * (columnWidth + spacingBetweenColumns)
+                val rightSlideBarPos = (rightSlideBar - firstVisibleColumn) * (columnWidth + spacingBetweenColumns)
                 val textWidth = xPos + textRect.right.toFloat() * 2
 
-                val isLeftSlideBar = position == leftSlideBar && textWidth >= rightSlideBarPos
-                val isRightSlideBar = position == rightSlideBar && textWidth >= fWidth
+                val isLeftSlideBar = position == leftSlideBar - firstVisibleColumn && textWidth >= rightSlideBarPos
+                val isRightSlideBar = position == rightSlideBar - firstVisibleColumn && textWidth >= fWidth
 
                 if (isLeftSlideBar || isRightSlideBar) {
                     xPos -= textRect.right * 2 + halfOfHistogramTopPadding
@@ -614,6 +626,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         columnWidth = fWidth / (currentVisibleColumnsCount + (currentVisibleColumnsCount - 1) * columnSpacingRatio)
         columnRadius = columnWidth / 2F
         spacingBetweenColumns = columnWidth * columnSpacingRatio
+        zoomLevelCorrection = TOUCH_SQUARE_PLACEHOLDER_DP + columns.size / currentVisibleColumnsCount
     }
 
     private fun processAudioFile(fileName: String) {
@@ -655,10 +668,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     ChunkingStrategy.CHUNKING_NONE -> level
                 }
 
-                // TODO bind column counts with chunked strategy
-                maxVisibleColumnsCount = columnBytes.size / 5
-                currentVisibleColumnsCount = columnBytes.size / 5 - 100
-                minVisibleColumnsCount = 200
+                // TODO refacor
+                maxVisibleColumnsCount = columnBytes.size - columnBytes.size / 10
+                currentVisibleColumnsCount = columnBytes.size / 3
+                minVisibleColumnsCount = columnBytes.size / 5
+
+                // TODO refacor
+                rightSlideBar = ((maxTrimLengthInSeconds - minTrimLengthInSeconds) * 1_000 * columnBytes.size / soundDuration).toInt().apply {
+                    Log.e("TIME", "$this")
+                }
             }
 
             SongMetadataReader(WeakReference(context), path).run {
@@ -731,19 +749,23 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
-    // TODO here is time range bounding
-    private fun isPositionsInTimeBounds() =
-        (getPositionTime(rightSlideBar) - getPositionTime(leftSlideBar)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds
+    private fun Float.plusCorrection() = plus(TOUCH_SQUARE_PLACEHOLDER_DP + zoomLevelCorrection)
 
-    private fun checkLeftUpdatingPosition(position: Int) =
-        ((getPositionTime(rightSlideBar) - getPositionTime(position)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds).apply {
-            Log.e("CHECK POSITION", "left, is $this")
-        }
+    private fun Float.minusCorrection() = minus(TOUCH_SQUARE_PLACEHOLDER_DP - zoomLevelCorrection)
 
-    private fun checkRightUpdatingPosition(position: Int) =
-        ((getPositionTime(position) - getPositionTime(leftSlideBar)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds).apply {
-            Log.e("CHECK POSITION", "right, is $this")
-        }
+    private fun <T : Comparable<T>> ClosedRange<T>.covers(start: T, end: T) =
+        start in this || end in this
+
+    private fun <T : Comparable<T>> ClosedRange<T>.fullyCovers(start: T, end: T) =
+        start in this && end in this
+
+    private fun <T : Comparable<T>> ClosedRange<T>.covers(other: ClosedRange<T>) =
+        other.start in this || other.endInclusive in this
+
+    private fun <T : Comparable<T>> ClosedRange<T>.fullyCovers(other: ClosedRange<T>) =
+        other.start in this && other.endInclusive in this
+
+    private fun Float.toDp() = context.pxToDp(this)
 
     private fun MutableList<UByte>.chunkedUBytes(chunkSize: Int) =
         chunked(chunkSize)
