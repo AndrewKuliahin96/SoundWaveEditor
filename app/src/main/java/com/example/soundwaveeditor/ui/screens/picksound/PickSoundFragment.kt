@@ -78,7 +78,6 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
         rxPermissions?.dispose()
     }
 
-    // TODO remove later
     private fun logE(message: String) {
         Log.e("PICK SOUND FR", message)
     }
@@ -98,7 +97,6 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
             R.string.dialog_ok, {
                 vSoundEditor.setVisibility(true)
                 drawHistogram()
-                // TODO refactor this
                 bTrim.setOnClickListener { vSoundEditor.trimAudio() }
             }, R.string.dialog_cancel) { Toast.makeText(context, "Cancel", Toast.LENGTH_SHORT).show() }
     }
@@ -117,9 +115,6 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
         }
     }
 
-    // TODO NEED TO SAVE VIEW STATE
-
-
     private var player: MediaPlayer? = null
 
     @SuppressLint("SetTextI18n")
@@ -137,21 +132,7 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
                 "/storage/sdcard1/Music/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"  // xiaomi
             }
 
-            // TODO need to optimize WAVE files opening (now time === 2 sec in best case)
-            // TODO also did it non-blocking to avoid ANR state
-
-//            val path = "/storage/sdcard1/Music/barnacle boi ☔ - _ flöating ☁.mp3"
-
-            // Testing for duration cases
-            // lb more than 5 min
-//            val path = "/sdcard/Music/A\$AP Rocky x Moby x T.I. x Kid Cudi - A\$AP Forever REMIX [Рифмы и Панчи].mp3"
-
-            // lb more than 1 min
-//            val path = "/sdcard/Music/\$ki Mask The \$lump God - Gone (Interlude).mp3"
-
-            // Optional, but good practice as minVis... and current...
-//            maxVisibleColumnsCount = 1_800
-//            currentVisibleColumnsCount = 700
+            // TODO did file opening non-blocking to avoid ANR state
 
             loadedCallback = {
                 soundData?.let { sd ->

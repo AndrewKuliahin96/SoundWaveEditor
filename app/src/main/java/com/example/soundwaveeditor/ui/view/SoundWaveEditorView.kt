@@ -22,7 +22,6 @@ import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 import kotlin.math.min
 
-
 @ExperimentalUnsignedTypes
 class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context, attrs) {
 
@@ -56,6 +55,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
     private val columnsRatioRange = 0F..1F
+
     private var zoomLevelCorrection = TOUCH_SQUARE_PLACEHOLDER_DP
     private var histogramTopPadding = DEFAULT_HISTOGRAM_TOP_PADDING
     private var halfOfHistogramTopPadding = DEFAULT_HISTOGRAM_TOP_PADDING
@@ -89,6 +89,48 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private val textRect = Rect(ZERO_SIZE, ZERO_SIZE, ZERO_SIZE, ZERO_SIZE)
 
     private val columns = mutableListOf<ColumnSize>()
+
+    private var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
+        set(value) = field.getIfAndInvalidate(value, {
+
+            // TODO add limitations check
+
+            checkSlideBars(value, rightSlideBar) &&
+
+            value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
+        }) { field = it }
+
+    private var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
+        set(value) = field.getIfAndInvalidate(value, {
+
+            // TODO add limitations check
+
+            checkSlideBars(leftSlideBar, value) &&
+
+            value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
+        }) { field = it }
+
+    private var columnBytes = mutableListOf<UByte>()
+        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+
+    private var soundFile: CheapSoundFile? = null
+        set(value) = field.getIfNew(value) { field = it }
+
+    private var currentPlayTimeMs = 0L
+        set(value) = field.getIfNew(value) {
+            field = it
+            playingPosition = (it * columnBytes.size / soundDuration).toInt()
+        }
+
+    private var playingPosition = ZERO_SIZE
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    private var loadingKeepGoing = false
+    private var loadingProgress = 0
+    private var numFramesSF = 0
 
     val chunkGroupingStrategy = ChunkGroupingStrategy.GROUPING_AVERAGE
     val chunkingStrategy = ChunkingStrategy.CHUNKING_AUTO
@@ -188,36 +230,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             value in 0..columnBytes.size - currentVisibleColumnsCount
         }) { field = it }
 
-    var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
-        set(value) = field.getIfAndInvalidate(value, {
-
-            // TODO add limitations check
-
-            value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
-        }) { field = it }
-
-    var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
-        set(value) = field.getIfAndInvalidate(value, {
-
-            // TODO add limitations check
-
-            value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
-        }) { field = it }
-
-    // TODO impl with bounding stripes
     var minTrimLengthInSeconds = DEFAULT_MIN_TRIM_LENGTH_IN_SEC
         set(value) = field.getIfAndInvalidate(value, { value in 1 until maxTrimLengthInSeconds }) {
             field = it
         }
 
-    // TODO impl with bounding stripes
     var maxTrimLengthInSeconds = DEFAULT_MAX_TRIM_LENGTH_IN_SEC
         set(value) = field.getIfAndInvalidate(value, {
-            value in (minTrimLengthInSeconds + 1) until soundDuration
+            value > minTrimLengthInSeconds
         }) { field = it }
-
-    var columnBytes = mutableListOf<UByte>()
-        set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
     var fileName: String? = null
         set(value) = field.getIfNew(value) {
@@ -225,24 +246,14 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             field = it
         }
 
-    var soundFile: CheapSoundFile? = null
-        set(value) = field.getIfNew(value) { field = it }
-
     var soundData: SoundData? = null
         set(value) = field.getIfNew(value) { field = it }
 
-    var currentPlayTimeMs = 0L
-        set(value) = field.getIfNew(value) {
-            field = it
-            playingPosition = (it * columnBytes.size / soundDuration).toInt()
-        }
+    // TODO process it
+    var inputFileAbsPath: String? = null
+    var outputFileAbsPath: String? = null
 
-    private var playingPosition = ZERO_SIZE
-        set(value) {
-            field = value
-            invalidate()
-        }
-
+    // TODO refactor all callbacks
     // TODO replace this callback by interface
     val updatingCallback = { time: Long ->
         currentPlayTimeMs += time
@@ -251,10 +262,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var seekingCallback: ((Int) -> Unit)? = null
 
     var updatePeriod: Long? = 0L
-
-    var loadingKeepGoing = false
-    var loadingProgress = 0
-    var numFramesSF = 0
 
     var loadedCallback: ((Boolean) -> Unit)? = null
 
@@ -386,6 +393,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
+        // TODO need to be impl-ted
         // TODO to create a value animator for play position escorting
         val initCenter = firstVisibleColumn + currentVisibleColumnsCount / 2
 
@@ -496,7 +504,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
                     if (movin == NO_MOVE && isTap) {
                         (event.x / columnWidthAndSpacing + firstVisibleColumn).toInt().let {
-                            getPositionTime(it).let { seekPos ->
+                            getTimeMsFromPosition(it).let { seekPos ->
                                 seekingCallback?.invoke(seekPos.toInt())
                                 currentPlayTimeMs = seekPos
                             }
@@ -509,6 +517,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         return eventResult
     }
 
+    // TODO remove file creating, fun signature must be like trimAudio(), add setter for out file
     // TODO user must give external/internal storage saving variant and new file path
     // TODO so, refactor fun below ->
     fun trimAudio() {
@@ -521,7 +530,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     val outFile = File(sfName)
 
                     try {
-                        soundFile?.trimAudioFile(outFile, getPositionTime(leftSlideBar), getPositionTime(rightSlideBar))
+                        soundFile?.trimAudioFile(outFile, getTimeMsFromPosition(leftSlideBar), getTimeMsFromPosition(rightSlideBar))
 
                         Log.e("TRIM AUDIO", "created, ${outFile.absolutePath}")
                     } catch (e: Exception) {
@@ -534,6 +543,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
+    // TODO this sh*t must be removed (it is user's responsibility)
     private fun makeSoundFileName(title: String?, extension: String) =
         context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.path?.let {
             File( if (it.endsWith("/")) it else "$it/").mkdirs()
@@ -549,7 +559,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             it + fileName + System.currentTimeMillis() + extension
         }
 
-    private fun getPositionTime(position: Int) =
+    private fun getTimeMsFromPosition(position: Int) =
         soundDuration / (columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L) * position
 
     private fun getTimeAndPosition(position: Int, result: (String, Float, Float) -> Unit) {
@@ -657,9 +667,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
             numFramesSF = numFrames
 
-            getMinMax()?.let {
+            getMinMax()?.let { minMax ->
                 for (i in 0..numFrames) {
-                    level.add((calculateHeight(i, it.first, it.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
+                    level.add((calculateHeight(i, minMax.first, minMax.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
                 }
 
                 columnBytes = when (chunkingStrategy) {
@@ -668,15 +678,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     ChunkingStrategy.CHUNKING_NONE -> level
                 }
 
-                // TODO refacor
-                maxVisibleColumnsCount = columnBytes.size - columnBytes.size / 10
-                currentVisibleColumnsCount = columnBytes.size / 3
-                minVisibleColumnsCount = columnBytes.size / 5
-
-                // TODO refacor
-                rightSlideBar = ((maxTrimLengthInSeconds - minTrimLengthInSeconds) * 1_000 * columnBytes.size / soundDuration).toInt().apply {
-                    Log.e("TIME", "$this")
-                }
+                // TODO get right slide bar position (prec: RSP in minTrimTime..maxTrimTime)
+                rightSlideBar =
             }
 
             SongMetadataReader(WeakReference(context), path).run {
@@ -688,6 +691,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             loadedCallback?.invoke(true)
         }
     }
+
+    private fun checkSlideBars(leftPos: Int, rightPos: Int) =
+        if (movin == MOVE_CENTER) {
+            true
+        } else {
+            ((getTimeMsFromPosition(rightPos) - getTimeMsFromPosition(leftPos)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds)
+        }
 
     private fun getUpdatingPeriod() =
         soundDuration / (columnBytes.size.takeIf { it != ZERO_SIZE } ?: 1)
@@ -750,7 +760,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     private fun Float.plusCorrection() = plus(TOUCH_SQUARE_PLACEHOLDER_DP + zoomLevelCorrection)
-
     private fun Float.minusCorrection() = minus(TOUCH_SQUARE_PLACEHOLDER_DP - zoomLevelCorrection)
 
     private fun <T : Comparable<T>> ClosedRange<T>.covers(start: T, end: T) =
@@ -789,6 +798,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             invalidate()
         } ?: Unit
 
+    private data class ColumnSize(var top: Float, var bottom: Float)
+
     data class SoundData(
         val filePath: String,
         val title: String? = null,
@@ -800,52 +811,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         val averageBitrate: Int? = null
     )
 
-    data class ColumnSize(var top: Float, var bottom: Float)
+    enum class ChunkingStrategy { CHUNKING_FIXED, CHUNKING_AUTO, CHUNKING_NONE; }
+    enum class ChunkGroupingStrategy { GROUPING_MIN, GROUPING_MAX, GROUPING_AVERAGE; }
 
-    enum class ChunkingStrategy(val strategy: Int) {
-        CHUNKING_FIXED(12),
-        CHUNKING_AUTO(24),
-        CHUNKING_NONE(36);
-
-        companion object {
-            fun byValue(value: Int?) =
-                values().firstOrNull { value == it.strategy } ?: CHUNKING_AUTO
-        }
-
-        operator fun invoke() = strategy
-    }
-
-    enum class ChunkGroupingStrategy(val strategy: Int) {
-        GROUPING_MIN(11),
-        GROUPING_MAX(21),
-        GROUPING_AVERAGE(31);
-
-        companion object {
-            fun byValue(value: Int?) =
-                values().firstOrNull { value == it.strategy } ?: GROUPING_AVERAGE
-        }
-
-        operator fun invoke() = strategy
-    }
-
-    // TODO create and test builder
-//    inner class Builder {
-//
-//        fun create(): RequiredBuilder {
-//
-//        }
-//
-//        fun build(): Opt or Required {
-//
-//        }
-//    }
-
-    // TODO use it to save view model state
-//    interface Model : Parcelable
-//
-//    interface ViewState : Model {
-//        var field: Long?
-//    }
+    // TODO model for saving view state
+//    interface ViewState : Parcelable
 //
 //    @Parcelize
 //    data class SavingModel(
@@ -895,3 +865,4 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 //        var numFramesSF: Int,
 //        var chunkingStrategy: Int) : ViewState
 }
+
