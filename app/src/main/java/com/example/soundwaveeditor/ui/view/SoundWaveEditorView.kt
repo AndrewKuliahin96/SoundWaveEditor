@@ -1,5 +1,6 @@
 package com.example.soundwaveeditor.ui.view
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
@@ -22,6 +23,7 @@ import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 import kotlin.math.min
 
+
 @ExperimentalUnsignedTypes
 class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context, attrs) {
 
@@ -39,10 +41,10 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val DEFAULT_MIN_TRIM_LENGTH_IN_SEC = 5
         private const val DEFAULT_FIXED_CHUNKS_STRATEGY = 10
         private const val TOUCH_SQUARE_PLACEHOLDER_DP = 8F
-        private const val DEFAULT_SLIDE_BARS_PADDING = 50
-        private const val DEFAULT_MAX_COLUMNS_COUNT = 500
-        private const val DEFAULT_MIN_COLUMNS_COUNT = 100
-        private const val DEFAULT_COLUMNS_COUNT = 300
+        private const val DEFAULT_SLIDE_BARS_PADDING = 100
+        private const val DEFAULT_MAX_COLUMNS_COUNT = 1_000
+        private const val DEFAULT_MIN_COLUMNS_COUNT = 200
+        private const val DEFAULT_COLUMNS_COUNT = 500
         private const val MOVE_CENTER = 16
         private const val MOVE_RIGHT = 8
         private const val MOVE_LEFT = 4
@@ -92,22 +94,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
-
-            // TODO add limitations check
-
-            checkSlideBars(value, rightSlideBar) &&
-
-            value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
+            checkSlideBars(value, rightSlideBar) && value in 1 until rightSlideBar - distanceBetweenSlideBarsInColumns
         }) { field = it }
 
     private var rightSlideBar = DEFAULT_COLUMNS_COUNT - DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
-
-            // TODO add limitations check
-
-            checkSlideBars(leftSlideBar, value) &&
-
-            value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
+            checkSlideBars(leftSlideBar, value) && when (columns.size) {
+                0 -> true
+                else -> value in leftSlideBar + distanceBetweenSlideBarsInColumns until columns.size
+            }
         }) { field = it }
 
     private var columnBytes = mutableListOf<UByte>()
@@ -393,13 +388,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
-        // TODO need to be impl-ted
-        // TODO to create a value animator for play position escorting
-        val initCenter = firstVisibleColumn + currentVisibleColumnsCount / 2
-
-        if (playingPosition in initCenter - 1 .. initCenter + 1) {
-            firstVisibleColumn++
-        }
+        checkEscortingPosition()
 
         columns.takeIf { it.size >= lastVisibleItem }
             ?.subList(firstVisibleColumn, lastVisibleItem)
@@ -543,6 +532,76 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
+    private fun checkEscortingPosition() {
+//        if (needToEscortPosition) {
+//
+//        }
+
+
+
+        // TODO need to be impl-ted
+        // TODO to create a value animator for play position escorting
+        val initCenter = firstVisibleColumn + currentVisibleColumnsCount / 2
+
+        if (playingPosition in initCenter - 1 .. initCenter + 1) {
+            Log.e("INCREMENT", "ok")
+
+            firstVisibleColumn++
+        } else {
+            Log.e("ANIMATOR", "ok")
+            if (escortingAnimator?.isRunning != true && !isScaling && movin == NO_MOVE) {
+                startAnimator(firstVisibleColumn, firstVisibleColumn + (playingPosition - initCenter))
+            }
+        }
+    }
+
+    // TODO replace to top
+    private var escortingAnimator: ValueAnimator? = null
+
+    // TODO refactor to get more flexibility
+    // TODO also there is no need to each time create new animator!
+    private fun startAnimator(startValue: Int, endValue: Int) {
+//        escortingAnimator?.takeIf { it.isRunning }?.cancel()
+
+        if (escortingAnimator == null) {
+            escortingAnimator = ValueAnimator()
+        }
+
+        escortingAnimator?.apply {
+            cancel()
+            setIntValues(startValue, endValue)
+
+            duration = (endValue - startValue).absoluteValue.toLong()
+
+            addUpdateListener {
+                (it.animatedValue as? Int)?.let { value ->
+                    if (!isScaling && movin == NO_MOVE) {
+                        firstVisibleColumn = value
+                        Log.e("VALUE", "$value")
+                    }
+                }
+            }
+
+            start()
+        }
+
+
+//
+//        escortingAnimator = ValueAnimator.ofInt(startValue, endValue).apply {
+//            duration = ((endValue - startValue).absoluteValue).toLong()
+//
+//            addUpdateListener {
+//                (it.animatedValue as? Int)?.let { value ->
+//                    if (!isScaling && movin == NO_MOVE) {
+//                        firstVisibleColumn = value
+//                    }
+//                }
+//            }
+//
+//            start()
+//        }
+    }
+
     // TODO this sh*t must be removed (it is user's responsibility)
     private fun makeSoundFileName(title: String?, extension: String) =
         context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.path?.let {
@@ -561,6 +620,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     private fun getTimeMsFromPosition(position: Int) =
         soundDuration / (columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L) * position
+
+    private fun getPositionFromTimeMs(time: Long) =
+        (((columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L) / soundDuration.toFloat()) * time).toInt()
 
     private fun getTimeAndPosition(position: Int, result: (String, Float, Float) -> Unit) {
         columnBytes.takeIf { it.isNotEmpty() }?.let {
@@ -663,7 +725,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         val level = mutableListOf<UByte>()
 
         soundFile?.run {
-            (numFrames * samplesPerFrame / sampleRate).let { soundDuration = it * 1_000L }
+            (numFrames * samplesPerFrame / sampleRate).let { soundDuration = it.toMs() }
 
             numFramesSF = numFrames
 
@@ -678,8 +740,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     ChunkingStrategy.CHUNKING_NONE -> level
                 }
 
-                // TODO get right slide bar position (prec: RSP in minTrimTime..maxTrimTime)
-                rightSlideBar =
+                val trimmingRange = getPositionFromTimeMs(minTrimLengthInSeconds.toMs()) .. getPositionFromTimeMs(maxTrimLengthInSeconds.toMs())
+
+                if (distanceBetweenSlideBarsInColumns !in trimmingRange) {
+                    distanceBetweenSlideBarsInColumns = getPositionFromTimeMs(minTrimLengthInSeconds.toMs())
+                }
+
+                val halfOfTrimSec = (minTrimLengthInSeconds + maxTrimLengthInSeconds) * 500
+
+                rightSlideBar = getPositionFromTimeMs(getTimeMsFromPosition(leftSlideBar) + halfOfTrimSec)
             }
 
             SongMetadataReader(WeakReference(context), path).run {
@@ -696,7 +765,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         if (movin == MOVE_CENTER) {
             true
         } else {
-            ((getTimeMsFromPosition(rightPos) - getTimeMsFromPosition(leftPos)) / 1_000 in minTrimLengthInSeconds..maxTrimLengthInSeconds)
+            ((getTimeMsFromPosition(rightPos) - getTimeMsFromPosition(leftPos)).toSec() in minTrimLengthInSeconds..maxTrimLengthInSeconds)
         }
 
     private fun getUpdatingPeriod() =
@@ -759,6 +828,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
+    private fun Long.toSec() = (this / 1_000).toInt()
+    private fun Int.toMs() = this * 1_000L
+
     private fun Float.plusCorrection() = plus(TOUCH_SQUARE_PLACEHOLDER_DP + zoomLevelCorrection)
     private fun Float.minusCorrection() = minus(TOUCH_SQUARE_PLACEHOLDER_DP - zoomLevelCorrection)
 
@@ -814,7 +886,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     enum class ChunkingStrategy { CHUNKING_FIXED, CHUNKING_AUTO, CHUNKING_NONE; }
     enum class ChunkGroupingStrategy { GROUPING_MIN, GROUPING_MAX, GROUPING_AVERAGE; }
 
-    // TODO model for saving view state
 //    interface ViewState : Parcelable
 //
 //    @Parcelize
