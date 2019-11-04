@@ -84,6 +84,8 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
 
     override fun onClick(view: View?) {
         view?.id?.let {
+            // TODO impl playing listener interface
+
             when (it) {
                 R.id.bPlay -> {}
                 R.id.bPause -> {}
@@ -129,7 +131,7 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
             val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 "/sdcard/Download/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"      // Samsung
             } else {
-                "/storage/sdcard1/Music/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"  // xiaomi
+                "/storage/sdcard1/Music/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"  // Xiaomi
             }
 
             // TODO did file opening non-blocking to avoid ANR state

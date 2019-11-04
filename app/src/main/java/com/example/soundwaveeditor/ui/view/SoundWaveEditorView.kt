@@ -50,6 +50,33 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val MOVE_LEFT = 4
         private const val MOVE_SLIDE = 2
         private const val NO_MOVE = -1
+
+        // TODO Implement all interfaces below:
+        interface LoadingProgressListener {
+            fun fractionComplete(percent: Int)
+            fun onLoaded(soundFile: SoundData) // TODO MB fun param need to be refactored
+            fun onLoadingError(ex: Exception)
+        }
+
+        interface PlayingListener {
+            fun onPlay(timeMs: Long)
+            fun onPause(timeMs: Long)
+            fun onStop()
+            fun onError(ex: Exception)
+        }
+
+        interface SeekingListener {
+            fun onSeek(timeMs: Long)
+        }
+
+        interface ErrorListener {
+            fun onError(ex: Exception)
+        }
+
+        interface TrimmingListener {
+            fun onTrim(startMs: Long, endMs: Long)
+            fun onTrimmedFileCreated(filePath: String)
+        }
     }
 
     private val scaleDetector: ScaleGestureDetector
@@ -261,7 +288,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     // TODO View callbacks:
     // * loading callback (fraction, end of loading);
-    // * playing callback (played, paused, stoped);
+    // * playing callback (played, paused, stopped);
     // * seek callback (seekTo);
     // * error callback;
     // * trimming callback (sound file trimmed, sound file created);
