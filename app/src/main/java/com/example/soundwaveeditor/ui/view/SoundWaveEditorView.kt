@@ -53,6 +53,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     private val scaleDetector: ScaleGestureDetector
+    private var escortingAnimator: ValueAnimator? = null
 
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
@@ -114,7 +115,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var currentPlayTimeMs = 0L
         set(value) = field.getIfNew(value) {
             field = it
-            playingPosition = (it * columnBytes.size / soundDuration).toInt()
+
+            if (needToPlayInSlideBars) {
+                (it * columnBytes.size / soundDuration).toInt().takeIf { newPlayPos -> newPlayPos in leftSlideBar .. rightSlideBar }?.let { smth ->
+                    playingPosition = (it * columnBytes.size / soundDuration).toInt()
+                } ?: let {
+                    // TODO seekTo callback with time of right slide bar
+
+                    Log.e("OUT", "cllback() inv")
+                }
+            } else {
+                playingPosition = (it * columnBytes.size / soundDuration).toInt()
+            }
         }
 
     private var playingPosition = ZERO_SIZE
@@ -198,6 +210,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var soundDuration = ZERO_SIZE_L
         set(value) = field.getIfAndInvalidate(value, { value > 0L }) { field = it }
 
+    var needToEscortPlayPosition = false
+        set(value) = field.getIfNewAndInvalidate(value) { field = it }
+
     var needToRoundColumns = false
         set(value) = field.getIfNewAndInvalidate(value) { field = it }
 
@@ -243,6 +258,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
     var soundData: SoundData? = null
         set(value) = field.getIfNew(value) { field = it }
+
+    // TODO View callbacks:
+    // * loading callback (fraction, end of loading);
+    // * playing callback (played, paused, stoped);
+    // * seek callback (seekTo);
+    // * error callback;
+    // * trimming callback (sound file trimmed, sound file created);
 
     // TODO process it
     var inputFileAbsPath: String? = null
@@ -326,6 +348,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                 DEFAULT_SLIDE_BARS_PADDING
             )
 
+            needToEscortPlayPosition =
+                getBoolean(R.styleable.SoundWaveEditorView_needToEscortPlayPosition, false)
+
             needToRoundColumns =
                 getBoolean(R.styleable.SoundWaveEditorView_needToRoundColumns, false)
 
@@ -388,7 +413,9 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         val lastVisibleItem = firstVisibleColumn + currentVisibleColumnsCount
 
-        checkEscortingPosition()
+        if (needToEscortPlayPosition) {
+            checkPositionEscorting()
+        }
 
         columns.takeIf { it.size >= lastVisibleItem }
             ?.subList(firstVisibleColumn, lastVisibleItem)
@@ -532,37 +559,19 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
-    private fun checkEscortingPosition() {
-//        if (needToEscortPosition) {
-//
-//        }
+    private fun checkPositionEscorting() {
+        if (escortingAnimator?.isRunning != true && !isScaling && movin == NO_MOVE) {
+            val initCenter = firstVisibleColumn + currentVisibleColumnsCount / 2
 
-
-
-        // TODO need to be impl-ted
-        // TODO to create a value animator for play position escorting
-        val initCenter = firstVisibleColumn + currentVisibleColumnsCount / 2
-
-        if (playingPosition in initCenter - 1 .. initCenter + 1) {
-            Log.e("INCREMENT", "ok")
-
-            firstVisibleColumn++
-        } else {
-            Log.e("ANIMATOR", "ok")
-            if (escortingAnimator?.isRunning != true && !isScaling && movin == NO_MOVE) {
+            if (playingPosition.toFloat() in initCenter - zoomLevelCorrection .. initCenter + zoomLevelCorrection) {
+                firstVisibleColumn = playingPosition - currentVisibleColumnsCount / 2
+            } else {
                 startAnimator(firstVisibleColumn, firstVisibleColumn + (playingPosition - initCenter))
             }
         }
     }
 
-    // TODO replace to top
-    private var escortingAnimator: ValueAnimator? = null
-
-    // TODO refactor to get more flexibility
-    // TODO also there is no need to each time create new animator!
     private fun startAnimator(startValue: Int, endValue: Int) {
-//        escortingAnimator?.takeIf { it.isRunning }?.cancel()
-
         if (escortingAnimator == null) {
             escortingAnimator = ValueAnimator()
         }
@@ -571,35 +580,18 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             cancel()
             setIntValues(startValue, endValue)
 
-            duration = (endValue - startValue).absoluteValue.toLong()
+            duration = (endValue - startValue).absoluteValue.toLong() * 3L
 
             addUpdateListener {
                 (it.animatedValue as? Int)?.let { value ->
                     if (!isScaling && movin == NO_MOVE) {
                         firstVisibleColumn = value
-                        Log.e("VALUE", "$value")
                     }
                 }
             }
 
             start()
         }
-
-
-//
-//        escortingAnimator = ValueAnimator.ofInt(startValue, endValue).apply {
-//            duration = ((endValue - startValue).absoluteValue).toLong()
-//
-//            addUpdateListener {
-//                (it.animatedValue as? Int)?.let { value ->
-//                    if (!isScaling && movin == NO_MOVE) {
-//                        firstVisibleColumn = value
-//                    }
-//                }
-//            }
-//
-//            start()
-//        }
     }
 
     // TODO this sh*t must be removed (it is user's responsibility)
@@ -936,4 +928,3 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 //        var numFramesSF: Int,
 //        var chunkingStrategy: Int) : ViewState
 }
-
