@@ -24,7 +24,7 @@
         app:needToShowTime="true"
         app:minTrimLengthInSeconds="10"
         app:maxTrimLengthInSeconds="25"
-        app:needToPlayInSlideBars="true"
+        app:needToPlayInSlideBars="false"
         android:visibility="gone"/>
 
     <LinearLayout

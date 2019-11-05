@@ -7,6 +7,7 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Parcelable
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -16,6 +17,7 @@ import androidx.lifecycle.Observer
 import com.example.soundwaveeditor.extensions.setClickListeners
 import com.example.soundwaveeditor.extensions.setVisibility
 import com.example.soundwaveeditor.ui.screens.base.BaseLifecycleFragment
+import com.example.soundwaveeditor.ui.view.SoundWaveEditorView
 import com.tbruyelle.rxpermissions2.RxPermissions
 import io.reactivex.Flowable
 import io.reactivex.android.schedulers.AndroidSchedulers
@@ -83,14 +85,11 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
     }
 
     override fun onClick(view: View?) {
-        view?.id?.let {
-            // TODO impl playing listener interface
-
-            when (it) {
-                R.id.bPlay -> {}
-                R.id.bPause -> {}
-                R.id.bStop -> {}
-            }
+        when (view?.id) {
+            R.id.bPlay -> vSoundEditor.play()
+            R.id.bPause -> vSoundEditor.pause()
+            R.id.bStop -> vSoundEditor.stop()
+            else -> Unit
         }
     }
 
@@ -122,22 +121,20 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
     @SuppressLint("SetTextI18n")
     private fun drawHistogram() {
         vSoundEditor.apply {
-
-            // Testing for audio formats cases
-//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).wav"      // OK
-//            val path = "/storage/sdcard1/Test/20SYL - Voices ft Rita J (instru).mp3"      // OK
-//
-
             val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 "/sdcard/Download/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"      // Samsung
             } else {
                 "/storage/sdcard1/Music/smrtdeath - Black castle (feat. New Jerzey Devil).mp3"  // Xiaomi
             }
 
-            // TODO did file opening non-blocking to avoid ANR state
+            loadingProgressListener = object : SoundWaveEditorView.Companion.LoadingProgressListener {
+                override fun onLoading(percentsLoaded: Int) {
+                    Log.e("onLoading", "loaded: $percentsLoaded%")
+                }
 
-            loadedCallback = {
-                soundData?.let { sd ->
+                override fun onLoaded(soundFile: SoundWaveEditorView.SoundData) = soundFile.let { sd ->
+                    Log.e("onLoaded", "ok")
+
                     sd.averageBitrate?.let { tvBitrate.text = "Average bitrate: $it kbps" }
                     sd.sampleRate?.let { tvFrequency.text = "Sample rate: $it Hz"  }
 
@@ -153,50 +150,89 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
                             "${sd.year ?: "No year info"}) ${sd.fileType ?: "Unknown file type"}"
                 }
 
-                player = MediaPlayer()
-
-                // TODO replace by s-thing non-depr or remove
-                player?.setAudioStreamType(AudioManager.STREAM_MUSIC)
-                player?.setDataSource(context, Uri.parse(File(path).absolutePath))
-
-                player?.setOnCompletionListener {
-                    Log.e("COMPLETED", "ok")
+                override fun onLoadingError(ex: Exception) {
+                    Log.e("onLoadingError", "message: ${ex.message}")
                 }
+            }
 
-                player?.setOnPreparedListener { p ->
-                    p.start()
+            playingListener = object : SoundWaveEditorView.Companion.PlayingListener {
+                override fun onPlay(timeMs: Long?) {
+                    if (timeMs == null) {
 
-                    Log.e("PREPARED", "ok")
-
-                    seekingCallback = {
-                        p.seekTo(it)
-
-                        Log.e("SEEK", "$it")
                     }
 
-                    updatePeriod?.let {
-                        Flowable
-                            .interval(it, TimeUnit.MILLISECONDS)
-                            .takeWhile { p.isPlaying }
-                            .timeInterval()
-                            .onBackpressureLatest()
-                            .subscribeOn(Schedulers.computation())
-                            .observeOn(AndroidSchedulers.mainThread())
-                            .subscribe({ t ->
-                                // TODO sync with media player position
-                                updatingCallback(t.time())
-                            }, { e ->
-                                Log.e("ERROR", "${e.message}")
-                            }, {
-                                Log.e("COMPLETE", "ok")
-                            })
-                    }
+                    Log.e("onPlay", "ok")
                 }
 
-                player?.prepareAsync()
+                override fun onSeek(timeMs: Long) {
+                    Log.e("onSeek", "ok")
+                }
+
+                override fun onPause(timeMs: Long) {
+                    Log.e("onPause", "ok")
+                }
+
+                override fun onStop() {
+                    Log.e("onStop", "ok")
+                }
+            }
+
+            trimmingListener  = object : SoundWaveEditorView.Companion.TrimmingListener {
+                override fun onTrimStart(startMs: Long, endMs: Long) {
+                    Log.e("onTrimStart", "ok")
+                }
+
+                override fun onTrimEnd() {
+                    Log.e("onTrimEnd", "ok")
+                }
+
+                override fun onTrimError(ex: Exception) {
+                    Log.e("onError", "message: ${ex.message}")
+                }
             }
 
             fileName = path
+            player = MediaPlayer()
+
+            // TODO replace by s-thing non-depr or remove
+            player?.setAudioStreamType(AudioManager.STREAM_MUSIC)
+            player?.setDataSource(context, Uri.parse(File(path).absolutePath))
+
+            player?.setOnCompletionListener {
+                Log.e("COMPLETED", "ok")
+            }
+
+            player?.setOnPreparedListener { p ->
+                p.start()
+
+                Log.e("PREPARED", "ok")
+
+                seekingCallback = {
+                    p.seekTo(it)
+
+                    Log.e("SEEK", "$it")
+                }
+
+                updatePeriod?.let {
+                    Flowable
+                        .interval(it, TimeUnit.MILLISECONDS)
+                        .takeWhile { p.isPlaying }
+                        .timeInterval()
+                        .onBackpressureLatest()
+                        .subscribeOn(Schedulers.computation())
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe({ t ->
+                            // TODO sync with media player position
+                            updatingCallback(t.time())
+                        }, { e ->
+                            Log.e("ERROR", "${e.message}")
+                        }, {
+                            Log.e("COMPLETE", "ok")
+                        })
+                }
+            }
+
+            player?.prepareAsync()
         }
     }
 }

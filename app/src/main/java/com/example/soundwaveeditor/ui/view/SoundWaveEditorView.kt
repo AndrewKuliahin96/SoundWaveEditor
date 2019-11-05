@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
 import android.os.Environment
+import android.os.Parcelable
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
@@ -16,6 +17,8 @@ import com.example.soundwaveeditor.extensions.pxToDp
 import com.example.soundwaveeditor.soundfile.CheapSoundFile
 import com.example.soundwaveeditor.soundfile.SongMetadataReader
 import com.example.soundwaveeditor.utils.SimpleScaleListener
+import kotlinx.android.parcel.Parcelize
+import kotlinx.android.parcel.RawValue
 import java.io.File
 import java.lang.ref.WeakReference
 import java.util.*
@@ -53,34 +56,27 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
         // TODO Implement all interfaces below:
         interface LoadingProgressListener {
-            fun fractionComplete(percent: Int)
-            fun onLoaded(soundFile: SoundData) // TODO MB fun param need to be refactored
+            fun onLoading(percentsLoaded: Int)
+            fun onLoaded(soundFile: SoundData)
             fun onLoadingError(ex: Exception)
         }
 
         interface PlayingListener {
-            fun onPlay(timeMs: Long)
+            fun onPlay(timeMs: Long? = null)
+            fun onSeek(timeMs: Long)
             fun onPause(timeMs: Long)
             fun onStop()
-            fun onError(ex: Exception)
-        }
-
-        interface SeekingListener {
-            fun onSeek(timeMs: Long)
-        }
-
-        interface ErrorListener {
-            fun onError(ex: Exception)
         }
 
         interface TrimmingListener {
-            fun onTrim(startMs: Long, endMs: Long)
-            fun onTrimmedFileCreated(filePath: String)
+            fun onTrimStart(startMs: Long, endMs: Long)
+            fun onTrimEnd()
+            fun onTrimError(ex: Exception)
         }
     }
 
-    private val scaleDetector: ScaleGestureDetector
     private var escortingAnimator: ValueAnimator? = null
+    private val scaleDetector: ScaleGestureDetector
 
     private val histogramTopPaddingRatioRange = 0F..2F
     private val verticalPaddingRatioRange = 0F..0.5F
@@ -114,11 +110,11 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     private var histogramBackgroundRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
-    private val drawingRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
+    private var drawingRectF = RectF(ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F, ZERO_SIZE_F)
 
-    private val textRect = Rect(ZERO_SIZE, ZERO_SIZE, ZERO_SIZE, ZERO_SIZE)
+    private var textRect = Rect(ZERO_SIZE, ZERO_SIZE, ZERO_SIZE, ZERO_SIZE)
 
-    private val columns = mutableListOf<ColumnSize>()
+    private var columns = mutableListOf<ColumnSize>()
 
     private var leftSlideBar = DEFAULT_SLIDE_BARS_PADDING
         set(value) = field.getIfAndInvalidate(value, {
@@ -163,11 +159,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
 
     private var loadingKeepGoing = false
-    private var loadingProgress = 0
     private var numFramesSF = 0
 
-    val chunkGroupingStrategy = ChunkGroupingStrategy.GROUPING_AVERAGE
-    val chunkingStrategy = ChunkingStrategy.CHUNKING_AUTO
+    // TODO or mb did it public to set from outdoor?
+    var loadingProgressListener: LoadingProgressListener? = null
+    var trimmingListener: TrimmingListener?= null
+    var playingListener: PlayingListener? = null
+
+    var chunkGroupingStrategy = ChunkGroupingStrategy.GROUPING_AVERAGE
+    var chunkingStrategy = ChunkingStrategy.CHUNKING_AUTO
 
     var fixedChunksStrategy = DEFAULT_FIXED_CHUNKS_STRATEGY
 
@@ -286,15 +286,13 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var soundData: SoundData? = null
         set(value) = field.getIfNew(value) { field = it }
 
-    // TODO View callbacks:
-    // * loading callback (fraction, end of loading);
-    // * playing callback (played, paused, stopped);
-    // * seek callback (seekTo);
-    // * error callback;
-    // * trimming callback (sound file trimmed, sound file created);
-
     // TODO process it
     var inputFileAbsPath: String? = null
+        set(value) = field.getIfAndInvalidate(value,
+            { value != field && value?.let { File(it).exists() } ?: false }) {
+
+        }
+
     var outputFileAbsPath: String? = null
 
     // TODO refactor all callbacks
@@ -306,8 +304,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     var seekingCallback: ((Int) -> Unit)? = null
 
     var updatePeriod: Long? = 0L
-
-    var loadedCallback: ((Boolean) -> Unit)? = null
 
     init {
         context.theme.obtainStyledAttributes(attrs, R.styleable.SoundWaveEditorView, 0, 0).apply {
@@ -573,17 +569,54 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
                     val outFile = File(sfName)
 
                     try {
-                        soundFile?.trimAudioFile(outFile, getTimeMsFromPosition(leftSlideBar), getTimeMsFromPosition(rightSlideBar))
+                        val startTime = getTimeMsFromPosition(leftSlideBar)
+                        val endTime = getTimeMsFromPosition(rightSlideBar)
+
+                        trimmingListener?.onTrimStart(startTime, endTime)
+                        soundFile?.trimAudioFile(outFile, startTime, endTime)
+                        trimmingListener?.onTrimEnd()
 
                         Log.e("TRIM AUDIO", "created, ${outFile.absolutePath}")
                     } catch (e: Exception) {
                         Log.e("TRIM AUDIO", "failed, ${e.message}")
+
+                        trimmingListener?.onTrimError(e)
 
                         outFile.takeIf { of -> of.exists() }?.delete()
                     }
                 }
             }
         }
+    }
+
+    fun play(time: Long) {
+        Log.e("Inner play", "with time, ok")
+
+        playingListener?.onPlay(time)
+    }
+
+    fun play() {
+        Log.e("Inner play", "with no params, ok")
+
+        playingListener?.onPlay()
+    }
+
+    fun pause() {
+        Log.e("Inner pause", "ok, timeMs: $currentPlayTimeMs")
+
+        playingListener?.onPause(currentPlayTimeMs)
+    }
+
+    fun stop() {
+        Log.e("Inner stop", "ok")
+
+        playingListener?.onStop()
+    }
+
+    fun seek(timeMs: Long) {
+        Log.e("Inner seek", "ok")
+
+        playingListener?.onSeek(timeMs)
     }
 
     private fun checkPositionEscorting() {
@@ -638,10 +671,12 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
 
     private fun getTimeMsFromPosition(position: Int) =
-        soundDuration / (columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L) * position
+        soundDuration / getColumnBytesSizeOrOne() * position
 
     private fun getPositionFromTimeMs(time: Long) =
-        (((columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L) / soundDuration.toFloat()) * time).toInt()
+        ((getColumnBytesSizeOrOne() / soundDuration.toFloat()) * time).toInt()
+
+    private fun getColumnBytesSizeOrOne() = columnBytes.size.takeIf { it != 0 }?.toLong() ?: 1L
 
     private fun getTimeAndPosition(position: Int, result: (String, Float, Float) -> Unit) {
         columnBytes.takeIf { it.isNotEmpty() }?.let {
@@ -721,62 +756,65 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     }
 
     private fun processAudioFile(fileName: String) {
-        val path = File(fileName).absolutePath
+        try {
+            val path = File(fileName).absolutePath
+            var loadingLastUpdateTime = System.currentTimeMillis()
 
-        var loadingLastUpdateTime = System.currentTimeMillis()
+            loadingKeepGoing = true
 
-        loadingKeepGoing = true
+            soundFile = CheapSoundFile.create(path, object : CheapSoundFile.Companion.ProgressListener {
+                override fun reportProgress(fractionComplete: Double): Boolean {
+                    val now = System.currentTimeMillis()
 
-        soundFile = CheapSoundFile.create(path, object : CheapSoundFile.Companion.ProgressListener {
-            override fun reportProgress(fractionComplete: Double): Boolean {
-                val now = System.currentTimeMillis()
+                    if (now - loadingLastUpdateTime > 100) {
+                        loadingProgressListener?.onLoading((100 * fractionComplete).toInt())
 
-                if (now - loadingLastUpdateTime > 100) {
-                    loadingProgress = (100 * fractionComplete).toInt()
+                        loadingLastUpdateTime = now
+                    }
 
-                    loadingLastUpdateTime = now
+                    return loadingKeepGoing
+                }
+            })
+
+            soundFile?.run {
+                soundDuration = (numFrames * samplesPerFrame / sampleRate).toMs()
+                numFramesSF = numFrames
+
+                getMinMax()?.let { minMax ->
+                    val level = mutableListOf<UByte>()
+
+                    for (i in 0..numFrames) {
+                        level.add((calculateHeight(i, minMax.first, minMax.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
+                    }
+
+                    columnBytes = when (chunkingStrategy) {
+                        ChunkingStrategy.CHUNKING_FIXED -> level.chunkedUBytes(fixedChunksStrategy)
+                        ChunkingStrategy.CHUNKING_AUTO -> level.chunkedUBytes(level.size / 1_000)
+                        ChunkingStrategy.CHUNKING_NONE -> level
+                    }
+
+                    val minTrimLengthPos = getPositionFromTimeMs(minTrimLengthInSeconds.toMs())
+                    val maxTrimLengthPos = getPositionFromTimeMs(maxTrimLengthInSeconds.toMs())
+
+                    if (distanceBetweenSlideBarsInColumns !in minTrimLengthPos .. maxTrimLengthPos) {
+                        distanceBetweenSlideBarsInColumns = minTrimLengthPos
+                    }
+
+                    val halfOfTrimSec = (minTrimLengthInSeconds + maxTrimLengthInSeconds) * 500
+
+                    rightSlideBar = getPositionFromTimeMs(getTimeMsFromPosition(leftSlideBar) + halfOfTrimSec)
                 }
 
-                return loadingKeepGoing
+                SongMetadataReader(WeakReference(context), path).run {
+                    soundData = SoundData(path, title, artist, album, year, fileType, sampleRate, avgBitrateKbps)
+                }
+
+                updatePeriod = getUpdatingPeriod()
+
+                soundData?.let { loadingProgressListener?.onLoaded(it) }
             }
-        })
-
-        val level = mutableListOf<UByte>()
-
-        soundFile?.run {
-            (numFrames * samplesPerFrame / sampleRate).let { soundDuration = it.toMs() }
-
-            numFramesSF = numFrames
-
-            getMinMax()?.let { minMax ->
-                for (i in 0..numFrames) {
-                    level.add((calculateHeight(i, minMax.first, minMax.second) * UByte.MAX_VALUE.toInt()).toUInt().toUByte())
-                }
-
-                columnBytes = when (chunkingStrategy) {
-                    ChunkingStrategy.CHUNKING_FIXED -> level.chunkedUBytes(fixedChunksStrategy)
-                    ChunkingStrategy.CHUNKING_AUTO -> level.chunkedUBytes(level.size / 1_000)
-                    ChunkingStrategy.CHUNKING_NONE -> level
-                }
-
-                val trimmingRange = getPositionFromTimeMs(minTrimLengthInSeconds.toMs()) .. getPositionFromTimeMs(maxTrimLengthInSeconds.toMs())
-
-                if (distanceBetweenSlideBarsInColumns !in trimmingRange) {
-                    distanceBetweenSlideBarsInColumns = getPositionFromTimeMs(minTrimLengthInSeconds.toMs())
-                }
-
-                val halfOfTrimSec = (minTrimLengthInSeconds + maxTrimLengthInSeconds) * 500
-
-                rightSlideBar = getPositionFromTimeMs(getTimeMsFromPosition(leftSlideBar) + halfOfTrimSec)
-            }
-
-            SongMetadataReader(WeakReference(context), path).run {
-                soundData = SoundData(path, title, artist, album, year, fileType, sampleRate, avgBitrateKbps)
-            }
-
-            updatePeriod = getUpdatingPeriod()
-
-            loadedCallback?.invoke(true)
+        } catch (ex: Exception) {
+            loadingProgressListener?.onLoadingError(ex)
         }
     }
 
@@ -784,7 +822,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         if (movin == MOVE_CENTER) {
             true
         } else {
-            ((getTimeMsFromPosition(rightPos) - getTimeMsFromPosition(leftPos)).toSec() in minTrimLengthInSeconds..maxTrimLengthInSeconds)
+            (getTimeMsFromPosition(rightPos) - getTimeMsFromPosition(leftPos)).toSec() in minTrimLengthInSeconds..maxTrimLengthInSeconds
         }
 
     private fun getUpdatingPeriod() =
@@ -873,9 +911,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private fun Paint.styleFill() = apply { style = Paint.Style.FILL }
 
     private fun <T> T.getIfNew(value: T?, predicate: () -> Boolean = { true }, receiver: (T) -> Unit) =
-        value?.takeIf { this != it && predicate() }?.let {
-            receiver(it)
-        } ?: Unit
+        value?.takeIf { this != it && predicate() }?.let { receiver(it) } ?: Unit
 
     private fun <T> T.getIfAndInvalidate(value: T?, predicate: () -> Boolean, receiver: (T) -> Unit) =
         value?.takeIf { this != it && predicate() }?.let {
@@ -889,8 +925,15 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             invalidate()
         } ?: Unit
 
-    private data class ColumnSize(var top: Float, var bottom: Float)
+    enum class ChunkingStrategy { CHUNKING_FIXED, CHUNKING_AUTO, CHUNKING_NONE; }
+    enum class ChunkGroupingStrategy { GROUPING_MIN, GROUPING_MAX, GROUPING_AVERAGE; }
 
+    interface StatefulModel : Parcelable
+
+    @Parcelize
+    data class ColumnSize(var top: Float, var bottom: Float) : StatefulModel
+
+    @Parcelize
     data class SoundData(
         val filePath: String,
         val title: String? = null,
@@ -899,59 +942,157 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         val year: Int? = null,
         val fileType: String? = null,
         val sampleRate: Int? = null,
-        val averageBitrate: Int? = null
-    )
+        val averageBitrate: Int? = null) : StatefulModel
 
-    enum class ChunkingStrategy { CHUNKING_FIXED, CHUNKING_AUTO, CHUNKING_NONE; }
-    enum class ChunkGroupingStrategy { GROUPING_MIN, GROUPING_MAX, GROUPING_AVERAGE; }
+    @Parcelize
+    data class SavingModel(
+        var histogramTopPadding: Float,
+        var halfOfHistogramTopPadding: Float,
+        var spacingBetweenColumns: Float,
+        var columnWidth: Float,
+        var columnRadius: Float,
+        var viewWidth: Float,
+        var viewHeight: Float,
+        var histogramYAxis: Float,
+        var histogramHeight: Float,
+        var backgroundColor: Int,
+        var activeColumnsColor: Int,
+        var inactiveColumnsColor: Int,
+        var playBarColumnColor: Int,
+        var slideBarColor: Int,
+        var timeTextColor: Int,
+        var histogramBackgroundRectF: RectF,
+        var drawingRectF: RectF,
+        var textRect: Rect,
+        var columns: MutableList<ColumnSize>,
+        var timeTextSize: Float,
+        var maxVisibleColumnsCount: Int,
+        var minVisibleColumnsCount: Int,
+        var currentVisibleColumnsCount: Int,
+        var distanceBetweenSlideBarsInColumns: Int,
+        var soundDuration: Long,
+        var needToRoundColumns: Boolean = false,
+        var needToShowTime: Boolean = false,
+        var histogramTopPaddingRatio: Float,
+        var columnSpacingRatio: Float,
+        var columnVerticalPaddingRatio: Float,
+        var firstVisibleColumn: Int,
+        var leftSlideBar: Int,
+        var rightSlideBar: Int,
+        var minTrimLengthInSeconds: Int,
+        var maxTrimLengthInSeconds: Int,
+        var columnBytes: @RawValue MutableList<UByte>,
+        var fileName: String?,
+        var soundFile: @RawValue CheapSoundFile?,
+        var soundData: SoundData?,
+        var currentPlayTimeMs: Long,
+        var playingPosition: Int,
+        var updatePeriod: Long?,
+        var numFramesSF: Int,
+        var chunkingStrategy: ChunkingStrategy,
+        var chunkGroupingStrategy: ChunkGroupingStrategy) : StatefulModel
 
-//    interface ViewState : Parcelable
-//
-//    @Parcelize
-//    data class SavingModel(
-//        var histogramTopPadding: Float,
-//        var halfOfHistogramTopPadding: Float,
-//        var spacingBetweenColumns: Float,
-//        var columnWidth: Float,
-//        var columnRadius: Float,
-//        var viewWidth: Float,
-//        var viewHeight: Float,
-//        var histogramYAxis: Float,
-//        var histogramHeight: Float,
-//        var backgroundColor: Int,
-//        var activeColumnsColor: Int,
-//        var inactiveColumnsColor: Int,
-//        var playBarColumnColor: Int,
-//        var slideBarColor: Int,
-//        var timeTextColor: Int,
-//        var histogramBackgroundRectF: RectF,
-//        var drawingRectF: RectF,
-//        var textRect: RectF,
-//        var columns: MutableList<ColumnSize>,
-//        var timeTextSize: Float,
-//        var histogramBackgroundColor: Float,
-//        var maxVisibleColumnsCount: Int,
-//        var minVisibleColumnsCount: Int,
-//        var currentVisibleColumnsCount: Int,
-//        var distanceBetweenSlideBarsInColumns: Int,
-//        var soundDuration: Int,
-//        var needToRoundColumns: Boolean = false,
-//        var needToShowTime: Boolean = false,
-//        var histogramTopPaddingRatio: Float,
-//        var columnSpacingRatio: Float,
-//        var columnVerticalPaddingRatio: Float,
-//        var firstVisibleColumn: Int,
-//        var leftSlideBar: Int,
-//        var rightSlideBar: Int,
-//        var minTrimLengthInSeconds: Int,
-//        var maxTrimLengthInSeconds: Int,
-//        var columnBytes: MutableList<UByte>,
-//        var fileName: String?,
-//        var soundFile: CheapSoundFile?,
-//        var soundData: SoundData?,
-//        var currentPlayTimeMs: Long,
-//        var playingPosition: Int,
-//        var updatePeriod: Long?,
-//        var numFramesSF: Int,
-//        var chunkingStrategy: Int) : ViewState
+    fun getModelState() = SavingModel(
+        histogramTopPadding,
+        halfOfHistogramTopPadding,
+        spacingBetweenColumns,
+        columnWidth,
+        columnRadius,
+        fWidth,
+        fHeight,
+        histogramYAxis,
+        histogramHeight,
+        histogramBackgroundColor,
+        activeColumnsColor,
+        inactiveColumnsColor,
+        playBarColor,
+        slideBarsColor,
+        timeTextColor,
+        histogramBackgroundRectF,
+        drawingRectF,
+        textRect,
+        columns,
+        timeTextSize,
+        maxVisibleColumnsCount,
+        minVisibleColumnsCount,
+        currentVisibleColumnsCount,
+        distanceBetweenSlideBarsInColumns,
+        soundDuration,
+        needToRoundColumns,
+        needToShowTime,
+        histogramTopPaddingRatio,
+        columnSpacingRatio,
+        columnVerticalPaddingRatio,
+        firstVisibleColumn,
+        leftSlideBar,
+        rightSlideBar,
+        minTrimLengthInSeconds,
+        maxTrimLengthInSeconds,
+        columnBytes,
+        fileName,
+        soundFile,
+        soundData,
+        currentPlayTimeMs,
+        playingPosition,
+        updatePeriod,
+        numFramesSF,
+        chunkingStrategy,
+        chunkGroupingStrategy).apply {
+
+        // TODO need to set listeners state PlayingListener.pause(time) etc
+
+        Log.e("onRestoreState", "saving model: $this")
+    }
+
+    fun setModelState(model: SavingModel) = model.let { savedModel ->
+        histogramTopPadding = savedModel.histogramTopPadding
+        halfOfHistogramTopPadding = savedModel.halfOfHistogramTopPadding
+        spacingBetweenColumns = savedModel.spacingBetweenColumns
+        columnWidth = savedModel.columnWidth
+        columnRadius = savedModel.columnRadius
+        fWidth = savedModel.viewWidth
+        fHeight = savedModel.viewHeight
+        histogramYAxis = savedModel.histogramYAxis
+        histogramHeight = savedModel.histogramHeight
+        histogramBackgroundColor = savedModel.backgroundColor
+        activeColumnsColor = savedModel.activeColumnsColor
+        inactiveColumnsColor = savedModel.inactiveColumnsColor
+        playBarColor = savedModel.playBarColumnColor
+        slideBarsColor = savedModel.slideBarColor
+        timeTextColor = savedModel.timeTextColor
+        histogramBackgroundRectF = savedModel.histogramBackgroundRectF
+        drawingRectF = savedModel.drawingRectF
+        textRect = savedModel.textRect
+        columns = savedModel.columns
+        timeTextSize = savedModel.timeTextSize
+        maxVisibleColumnsCount = savedModel.maxVisibleColumnsCount
+        minVisibleColumnsCount = savedModel.minVisibleColumnsCount
+        currentVisibleColumnsCount = savedModel.currentVisibleColumnsCount
+        distanceBetweenSlideBarsInColumns = savedModel.distanceBetweenSlideBarsInColumns
+        soundDuration = savedModel.soundDuration
+        needToRoundColumns = savedModel.needToRoundColumns
+        needToShowTime = savedModel.needToShowTime
+        histogramTopPaddingRatio = savedModel.histogramTopPaddingRatio
+        columnSpacingRatio = savedModel.columnSpacingRatio
+        columnVerticalPaddingRatio = savedModel.columnVerticalPaddingRatio
+        firstVisibleColumn = savedModel.firstVisibleColumn
+        leftSlideBar = savedModel.leftSlideBar
+        rightSlideBar = savedModel.rightSlideBar
+        minTrimLengthInSeconds = savedModel.minTrimLengthInSeconds
+        maxTrimLengthInSeconds = savedModel.maxTrimLengthInSeconds
+        columnBytes = savedModel.columnBytes
+        fileName = savedModel.fileName
+        soundFile = savedModel.soundFile
+        soundData = savedModel.soundData
+        currentPlayTimeMs = savedModel.currentPlayTimeMs
+        playingPosition = savedModel.playingPosition
+        updatePeriod = savedModel.updatePeriod
+        numFramesSF = savedModel.numFramesSF
+        chunkingStrategy = savedModel.chunkingStrategy
+        chunkGroupingStrategy = savedModel.chunkGroupingStrategy
+
+        // TODO need to set listeners state PlayingListener.play(time) etc
+
+        Log.e("onRestoreState", "restoring model: $savedModel")
+    }
 }
