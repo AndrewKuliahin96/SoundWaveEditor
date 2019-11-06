@@ -4,7 +4,6 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.*
-import android.os.Environment
 import android.os.Parcelable
 import android.util.AttributeSet
 import android.util.Log
@@ -21,7 +20,6 @@ import kotlinx.android.parcel.Parcelize
 import kotlinx.android.parcel.RawValue
 import java.io.File
 import java.lang.ref.WeakReference
-import java.util.*
 import kotlin.concurrent.thread
 import kotlin.math.absoluteValue
 import kotlin.math.min
@@ -54,7 +52,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         private const val MOVE_SLIDE = 2
         private const val NO_MOVE = -1
 
-        // TODO Implement all interfaces below:
         interface LoadingProgressListener {
             fun onLoading(percentsLoaded: Int)
             fun onLoaded(soundFile: SoundData)
@@ -161,7 +158,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
     private var loadingKeepGoing = false
     private var numFramesSF = 0
 
-    // TODO or mb did it public to set from outdoor?
     var loadingProgressListener: LoadingProgressListener? = null
     var trimmingListener: TrimmingListener?= null
     var playingListener: PlayingListener? = null
@@ -277,23 +273,14 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             value > minTrimLengthInSeconds
         }) { field = it }
 
-    var fileName: String? = null
-        set(value) = field.getIfNew(value) {
-            it?.let { file -> processAudioFile(file) }
-            field = it
-        }
-
     var soundData: SoundData? = null
         set(value) = field.getIfNew(value) { field = it }
 
-    // TODO process it
-    var inputFileAbsPath: String? = null
-        set(value) = field.getIfAndInvalidate(value,
-            { value != field && value?.let { File(it).exists() } ?: false }) {
+    var inputFilePath: String? = null
+        set(value) = field.getIfNewAndInvalidate(value) { field = value }
 
-        }
-
-    var outputFileAbsPath: String? = null
+    var outputFilePath: String? = null
+        set(value) = field.getIfNewAndInvalidate(value) { field = value }
 
     // TODO refactor all callbacks
     // TODO replace this callback by interface
@@ -556,35 +543,27 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         return eventResult
     }
 
-    // TODO remove file creating, fun signature must be like trimAudio(), add setter for out file
-    // TODO user must give external/internal storage saving variant and new file path
-    // TODO so, refactor fun below ->
-    fun trimAudio() {
+    fun trimAudio() = outputFilePath?.let {
+        val outFile = File(it)
+
+        require(outFile.exists()) { "Output file must not be null" }
+
         thread {
-            fileName?.split("/")?.last()?.dropLastWhile { it != '.' }?.let { title ->
-                makeSoundFileName(
-                    "$title (trimmed)",
-                    ".${soundFile?.fileType?.toLowerCase(Locale.getDefault()) ?: "m4a"}")?.let { sfName ->
+            try {
+                val startTime = getTimeMsFromPosition(leftSlideBar)
+                val endTime = getTimeMsFromPosition(rightSlideBar)
 
-                    val outFile = File(sfName)
+                trimmingListener?.onTrimStart(startTime, endTime)
+                soundFile?.trimAudioFile(outFile, startTime, endTime)
+                trimmingListener?.onTrimEnd()
 
-                    try {
-                        val startTime = getTimeMsFromPosition(leftSlideBar)
-                        val endTime = getTimeMsFromPosition(rightSlideBar)
+                Log.e("TRIM AUDIO", "created, ${outFile.absolutePath}")
+            } catch (e: Exception) {
+                Log.e("TRIM AUDIO", "failed, ${e.message}")
 
-                        trimmingListener?.onTrimStart(startTime, endTime)
-                        soundFile?.trimAudioFile(outFile, startTime, endTime)
-                        trimmingListener?.onTrimEnd()
+                trimmingListener?.onTrimError(e)
 
-                        Log.e("TRIM AUDIO", "created, ${outFile.absolutePath}")
-                    } catch (e: Exception) {
-                        Log.e("TRIM AUDIO", "failed, ${e.message}")
-
-                        trimmingListener?.onTrimError(e)
-
-                        outFile.takeIf { of -> of.exists() }?.delete()
-                    }
-                }
+                outFile.takeIf { of -> of.exists() }?.delete()
             }
         }
     }
@@ -653,22 +632,6 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
             start()
         }
     }
-
-    // TODO this sh*t must be removed (it is user's responsibility)
-    private fun makeSoundFileName(title: String?, extension: String) =
-        context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.path?.let {
-            File( if (it.endsWith("/")) it else "$it/").mkdirs()
-
-            val fileName = StringBuilder()
-
-            title?.forEach { char ->
-                if (Character.isLetterOrDigit(char)) {
-                    fileName.append(char)
-                }
-            }
-
-            it + fileName + System.currentTimeMillis() + extension
-        }
 
     private fun getTimeMsFromPosition(position: Int) =
         soundDuration / getColumnBytesSizeOrOne() * position
@@ -755,22 +718,17 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         zoomLevelCorrection = TOUCH_SQUARE_PLACEHOLDER_DP + columns.size / currentVisibleColumnsCount
     }
 
-    private fun processAudioFile(fileName: String) {
+    fun processAudioFile() = inputFilePath?.let {
+        require(File(it).exists()) { "Input file must not be null" }
+
         try {
-            val path = File(fileName).absolutePath
-            var loadingLastUpdateTime = System.currentTimeMillis()
+            val path = File(it).absolutePath
 
             loadingKeepGoing = true
 
             soundFile = CheapSoundFile.create(path, object : CheapSoundFile.Companion.ProgressListener {
                 override fun reportProgress(fractionComplete: Double): Boolean {
-                    val now = System.currentTimeMillis()
-
-                    if (now - loadingLastUpdateTime > 100) {
-                        loadingProgressListener?.onLoading((100 * fractionComplete).toInt())
-
-                        loadingLastUpdateTime = now
-                    }
+                    loadingProgressListener?.onLoading((100 * fractionComplete).toInt())
 
                     return loadingKeepGoing
                 }
@@ -811,7 +769,7 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
 
                 updatePeriod = getUpdatingPeriod()
 
-                soundData?.let { loadingProgressListener?.onLoaded(it) }
+                soundData?.let { sd -> loadingProgressListener?.onLoaded(sd) }
             }
         } catch (ex: Exception) {
             loadingProgressListener?.onLoadingError(ex)
@@ -885,16 +843,16 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         }
     }
 
-    private fun Long.toSec() = (this / 1_000).toInt()
     private fun Int.toMs() = this * 1_000L
+    private fun Long.toSec() = (this / 1_000).toInt()
+
+    private fun Float.toDp() = context.pxToDp(this)
 
     private fun Float.plusCorrection() = plus(TOUCH_SQUARE_PLACEHOLDER_DP + zoomLevelCorrection)
     private fun Float.minusCorrection() = minus(TOUCH_SQUARE_PLACEHOLDER_DP - zoomLevelCorrection)
 
     private fun <T : Comparable<T>> ClosedRange<T>.covers(start: T, end: T) =
         start in this || end in this
-
-    private fun Float.toDp() = context.pxToDp(this)
 
     private fun MutableList<UByte>.chunkedUBytes(chunkSize: Int) =
         chunked(chunkSize)
@@ -982,7 +940,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         var minTrimLengthInSeconds: Int,
         var maxTrimLengthInSeconds: Int,
         var columnBytes: @RawValue MutableList<UByte>,
-        var fileName: String?,
+        var inputFilePath: String?,
+        var outputFilePath: String?,
         var soundFile: @RawValue CheapSoundFile?,
         var soundData: SoundData?,
         var currentPlayTimeMs: Long,
@@ -1029,7 +988,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         minTrimLengthInSeconds,
         maxTrimLengthInSeconds,
         columnBytes,
-        fileName,
+        inputFilePath,
+        outputFilePath,
         soundFile,
         soundData,
         currentPlayTimeMs,
@@ -1081,7 +1041,8 @@ class SoundWaveEditorView(context: Context, attrs: AttributeSet) : View(context,
         minTrimLengthInSeconds = savedModel.minTrimLengthInSeconds
         maxTrimLengthInSeconds = savedModel.maxTrimLengthInSeconds
         columnBytes = savedModel.columnBytes
-        fileName = savedModel.fileName
+        inputFilePath = savedModel.inputFilePath
+        outputFilePath = savedModel.outputFilePath
         soundFile = savedModel.soundFile
         soundData = savedModel.soundData
         currentPlayTimeMs = savedModel.currentPlayTimeMs

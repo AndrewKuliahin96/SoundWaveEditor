@@ -7,13 +7,14 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Parcelable
+import android.os.Environment
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.example.soundwaveeditor.R
 import android.util.Log
 import androidx.lifecycle.Observer
+import com.example.soundwaveeditor.extensions.safeLet
 import com.example.soundwaveeditor.extensions.setClickListeners
 import com.example.soundwaveeditor.extensions.setVisibility
 import com.example.soundwaveeditor.ui.screens.base.BaseLifecycleFragment
@@ -25,6 +26,7 @@ import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
 import kotlinx.android.synthetic.main.fragment_pick_sound.*
 import java.io.File
+import java.util.*
 import java.util.concurrent.TimeUnit
 
 
@@ -39,6 +41,7 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
     override val backNavId = -1
     override val isHaveToolbar = false
 
+    private var player: MediaPlayer? = null
     private var rxPermissions: Disposable? = null
 
     override fun observeLiveData() {
@@ -94,11 +97,17 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
     }
 
     private fun comeOn() {
-        showAlert("Do u wanna pick sound to process?", "Open audio", true,
+        showAlert("Do u to wanna pick sound to process?", "Open audio", true,
             R.string.dialog_ok, {
                 vSoundEditor.setVisibility(true)
                 drawHistogram()
-                bTrim.setOnClickListener { vSoundEditor.trimAudio() }
+                bTrim.setOnClickListener {
+                    vSoundEditor.inputFilePath?.split("/")?.last()?.dropLastWhile { it != '.' }?.let { title ->
+                        vSoundEditor.soundData?.fileType?.toLowerCase(Locale.getDefault())?.let { ext ->
+                            trimAudio(title, ext)
+                        }
+                    }
+                }
             }, R.string.dialog_cancel) { Toast.makeText(context, "Cancel", Toast.LENGTH_SHORT).show() }
     }
 
@@ -116,7 +125,25 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
         }
     }
 
-    private var player: MediaPlayer? = null
+    private fun trimAudio(title: String, ext: String) {
+        safeLet(title, ext) { sfTitle, sfExt ->
+            makeSoundFileName(sfTitle, sfExt)?.let {
+                Log.e("TRIM AUDIO", "full: $it")
+
+                vSoundEditor.outputFilePath = it
+                vSoundEditor.trimAudio()
+            }
+        }
+    }
+
+    private fun makeSoundFileName(title: String?, extension: String) =
+        context?.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.path?.let {
+            val externalPath = it.takeIf { it.endsWith("/") } ?: "$it/"
+
+            File(if (it.endsWith("/")) it else "$it/").mkdirs().let { Log.e("MKDS", "r: $it") }
+
+            "${externalPath}$title$extension".apply { File(it).mkdirs().let { r -> Log.e("MKDIRS", "res = $r") } }
+        }
 
     @SuppressLint("SetTextI18n")
     private fun drawHistogram() {
@@ -158,7 +185,7 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
             playingListener = object : SoundWaveEditorView.Companion.PlayingListener {
                 override fun onPlay(timeMs: Long?) {
                     if (timeMs == null) {
-
+                        Log.e("onPlay", "TIME MS == null")
                     }
 
                     Log.e("onPlay", "ok")
@@ -191,7 +218,8 @@ class PickSoundFragment : BaseLifecycleFragment<PickSoundViewModel>(), View.OnCl
                 }
             }
 
-            fileName = path
+            inputFilePath = path
+            processAudioFile()
             player = MediaPlayer()
 
             // TODO replace by s-thing non-depr or remove
